@@ -47,7 +47,7 @@ impl ForbiddenMatcher {
         Self { ac }
     }
 
-    pub fn find<'a>(&self, url: &'a str) -> Option<(&'static str, &'static str)> {
+    pub fn find(&self, url: &str) -> Option<(&'static str, &'static str)> {
         self.ac
             .find(url)
             .map(|m| FORBIDDEN[m.pattern().as_usize()])
