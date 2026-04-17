@@ -65,10 +65,8 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     let mut seen: HashSet<String> = HashSet::new();
 
     let push_resource = |u: &str, to_fetch: &mut Vec<Url>, seen: &mut HashSet<String>| {
-        if seen.insert(u.to_string()) {
-            if let Ok(parsed) = Url::parse(u) {
-                to_fetch.push(parsed);
-            }
+        if seen.insert(u.to_string()) && let Ok(parsed) = Url::parse(u) {
+            to_fetch.push(parsed);
         }
     };
 
@@ -118,12 +116,10 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
         let size = f.brotli_bytes;
 
         // Host for third-party tally.
-        if let Ok(u) = Url::parse(&f.url) {
-            if let Some(host) = u.host_str() {
-                let reg = registrable_domain(host);
-                if !reg.is_empty() && reg != root_host_root {
-                    third_party_hosts.insert(reg);
-                }
+        if let Ok(u) = Url::parse(&f.url) && let Some(host) = u.host_str() {
+            let reg = registrable_domain(host);
+            if !reg.is_empty() && reg != root_host_root {
+                third_party_hosts.insert(reg);
             }
         }
 
@@ -222,16 +218,14 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     let forbidden = ForbiddenMatcher::new();
     let mut flagged_urls: HashSet<String> = HashSet::new();
     let check = |vios: &mut Vec<Violation>, u: &str, flagged: &mut HashSet<String>| {
-        if let Some((pat, reason)) = forbidden.find(u) {
-            if flagged.insert(pat.to_string()) {
-                vios.push(Violation {
-                    kind: ViolationKind::Forbidden,
-                    metric: "forbidden",
-                    budget: 0,
-                    actual: 1,
-                    detail: format!("{pat} — {reason}"),
-                });
-            }
+        if let Some((pat, reason)) = forbidden.find(u) && flagged.insert(pat.to_string()) {
+            vios.push(Violation {
+                kind: ViolationKind::Forbidden,
+                metric: "forbidden",
+                budget: 0,
+                actual: 1,
+                detail: format!("{pat} — {reason}"),
+            });
         }
     };
     for f in &fetched {

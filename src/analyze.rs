@@ -62,17 +62,15 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
         let defer = el.value().attr("defer").is_some();
         let in_head = has_ancestor(&el, "head");
         let blocking = in_head && !async_ && !defer;
-        if let Some(src) = el.value().attr("src") {
-            if let Some(resolved) = resolve(base, src) {
-                a.script_urls.push(ResourceRef {
-                    url: resolved,
-                    render_blocking: blocking,
-                    is_lcp_candidate: false,
-                    is_lazy: false,
-                });
-                if blocking {
-                    a.render_blocking_in_head += 1;
-                }
+        if let Some(src) = el.value().attr("src") && let Some(resolved) = resolve(base, src) {
+            a.script_urls.push(ResourceRef {
+                url: resolved,
+                render_blocking: blocking,
+                is_lcp_candidate: false,
+                is_lazy: false,
+            });
+            if blocking {
+                a.render_blocking_in_head += 1;
             }
         } else {
             let body: String = el.text().collect();
@@ -148,10 +146,8 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
                 }),
             }
         } else if rel.contains("preconnect") || rel.contains("dns-prefetch") {
-            if let Ok(u) = Url::parse(&resolved) {
-                if let Some(h) = u.host_str() {
-                    a.preconnect_targets.push(h.to_string());
-                }
+            if let Ok(u) = Url::parse(&resolved) && let Some(h) = u.host_str() {
+                a.preconnect_targets.push(h.to_string());
             }
         } else if rel.contains("modulepreload") {
             a.script_urls.push(ResourceRef {
@@ -189,30 +185,26 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
             // is lazy-loaded this is often a Lighthouse-gaming trick.
             a.lazy_lcp_candidate = true;
         }
-        if let Some(s) = src {
-            if let Some(resolved) = resolve(base, s) {
-                a.image_urls.push(ResourceRef {
-                    url: resolved,
-                    render_blocking: false,
-                    is_lcp_candidate: first_img,
-                    is_lazy: lazy,
-                });
-            }
+        if let Some(s) = src && let Some(resolved) = resolve(base, s) {
+            a.image_urls.push(ResourceRef {
+                url: resolved,
+                render_blocking: false,
+                is_lcp_candidate: first_img,
+                is_lazy: lazy,
+            });
         }
         first_img = false;
     }
 
     // <iframe>
     for el in doc.select(&sel_iframe) {
-        if let Some(src) = el.value().attr("src") {
-            if let Some(resolved) = resolve(base, src) {
-                a.other_urls.push(ResourceRef {
-                    url: resolved,
-                    render_blocking: false,
-                    is_lcp_candidate: false,
-                    is_lazy: false,
-                });
-            }
+        if let Some(src) = el.value().attr("src") && let Some(resolved) = resolve(base, src) {
+            a.other_urls.push(ResourceRef {
+                url: resolved,
+                render_blocking: false,
+                is_lcp_candidate: false,
+                is_lazy: false,
+            });
         }
     }
 
@@ -258,10 +250,8 @@ fn resolve(base: &Url, href: &str) -> Option<String> {
 fn has_ancestor(el: &scraper::ElementRef<'_>, tag: &str) -> bool {
     let mut cur = el.parent();
     while let Some(n) = cur {
-        if let Some(v) = n.value().as_element() {
-            if v.name() == tag {
-                return true;
-            }
+        if let Some(v) = n.value().as_element() && v.name() == tag {
+            return true;
         }
         cur = n.parent();
     }
