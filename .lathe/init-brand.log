@@ -1,0 +1,12 @@
+`.lathe/brand.md` is written. Here's what the evidence produced:
+
+**Identity read:** Blunt authority that defines itself by refusal. The clearest signal in the repo isn't what gnomon does — it's the sustained list of things it won't do or add. That's rare enough to be brand, not just design.
+
+**Five edge-case examples anchored to real strings:**
+- "No" → literal PLAN.md text about `--warn-only`
+- Failure → `"14.7 KiB over"` format + `gnomon:` prefix pattern in main.rs
+- Explanation → the forbidden list's `"domain — reason (next step)"` rhythm in forbidden.rs
+- Onboarding → the identical two-sentence description in Cargo.toml and cli.rs
+- Celebration → `"all budgets met".dimmed()` in report.rs — quiet by design
+
+**The thing it'd never do:** Introduce a warning tier. That's the specific texture the project explicitly rejects, and it's load-bearing — every other stance follows from it.

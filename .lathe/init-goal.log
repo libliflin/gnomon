@@ -1,0 +1,17 @@
+All files are written. Here's what was created:
+
+**`.lathe/goal.md`** — The customer champion's behavioral doc. Five stakeholders with first-encounter journeys, per-stakeholder emotional signals (trust, confidence, momentum, conviction, predictability), four real tensions with resolution signals, the two-source ranking model (CI floor → lived experience), maturation stages, and the cycle-by-cycle job.
+
+**`.lathe/skills/journeys.md`** — Concrete walk-throughs for each stakeholder. Includes specific commands to run, what to notice, and where each emotional signal breaks. These are what the champion actually executes each cycle.
+
+**`.lathe/skills/architecture.md`** — Module map, data flow, where checks live, what's implemented vs not, public API surface, and key implementation choices.
+
+**`.lathe/skills/testing.md`** — Current test state (one sanity tautology), how to run tests, highest-value test targets, conventions to establish, CI status.
+
+**`.lathe/skills/build.md`** — Build commands, lint, release profile rationale, key dependencies with explanations, what's planned but absent.
+
+**`.lathe/skills/domains.md`** — Six domain map (Web Performance Metrics, Static Analysis, HTTP, Rust/Cargo, CI/GitHub, insley-web Standard) — tells the builder which authority to consult when a question spans layers.
+
+**`.lathe/alignment-summary.md`** — Human-readable summary: who it serves, emotional signals, tensions, repo security assessment (no CI, no branch protection verified, public repo, no injection surface), and what could be wrong.
+
+The most important thing I kept out of `goal.md`: any frozen layer ladder. The ranking model names exactly two sources — the CI floor and lived experience — and lets the tensions section handle ties. The stakeholder journeys are concrete enough that the champion can actually walk them, not just reference them abstractly.

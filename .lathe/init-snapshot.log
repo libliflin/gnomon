@@ -1,0 +1,7 @@
+Clean output, exit 0, 686 chars — well within the 6K budget. Here's what was produced:
+
+**`.lathe/snapshot.sh`** — sections: Header, Git Status, Recent Commits, Build (cargo build), Tests (cargo test --lib --bins with pass/fail counts), Clippy (cargo clippy -D warnings), CI (checks for .github/workflows).
+
+**`src/lib.rs`** — added a `#[cfg(test)] mod tests` with a `sanity` tautological test to bootstrap the test runner.
+
+The clippy failures are real — 9 diagnostics in the source code that the builder agent will need to address.

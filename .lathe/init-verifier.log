@@ -1,0 +1,13 @@
+`.lathe/verifier.md` is written. Here's what I encoded and why:
+
+**Shape detected: Library + CLI.** `Cargo.toml` has both `[lib]` and `[[bin]]` with crates.io metadata — this ships to two audiences. The playbook witnesses both: binary via `cargo run -- audit` and library surface via re-export confirmation.
+
+**Key adversarial areas I encoded:**
+
+- **Boundary values for budgets** — `actual == budget` (PASS) vs `actual == budget + 1` (FAIL), plus budgets set to 0 (insley's `js`/`fonts`) where any load is a violation.
+- **Exit codes 0/1/2** — the CI operator's contract. Any change touching `run()` or `audit_url`'s return must be verified against all three.
+- **`analyze_html` edge cases** — malformed HTML, missing attributes, `data:` URIs, case-insensitive attribute matching, render-blocking detection (in-head vs body).
+- **`bytes_check`/`count_check` pattern** — the builder's instructions explicitly call this out as the convention; the verifier checks new checks follow it.
+- **Library surface changes** — `Violation`, `ViolationKind`, `AuditReport`, `Budget` all derive `Serialize`; changes to them affect the JSON contract.
+
+**Test convention** — no real tests exist yet. I pointed the verifier at where to add them: `#[cfg(test)]` blocks in the owning module, with fixture HTML strings for `analyze.rs` and direct function calls for `budget.rs`/`forbidden.rs`.

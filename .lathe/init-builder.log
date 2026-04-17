@@ -1,0 +1,13 @@
+`.lathe/builder.md` is written.
+
+It encodes:
+
+- **Identity** — receives a goal with a stakeholder, implements one change landed clean
+- **Goal-setter alignment** — reads the stakeholder framing, understands the journey moment, uses that to weigh tradeoffs
+- **Project conventions** — exact module map, how to add a new check end-to-end, error handling patterns, async contract, serialization rules, dependency discipline
+- **General problem solving** — types over runtime checks, `ViolationKind` discipline, the violation pipeline pattern
+- **Witnessability** — concrete verifier pointers: commands, URLs, imports, output lines
+- **Voice** — direct/declarative, matches the `gnomon:` error prefix and violation detail style already in the code
+- **CI/CD model** — CI-first priority, engine merges, no-CI-configured callout, slow CI as a first-class problem
+- **Changelog format** — with a `Spotted` section for adjacent work
+- **Rules** — clippy clean, tests preserved, one change, no unbidden stdout from library code
