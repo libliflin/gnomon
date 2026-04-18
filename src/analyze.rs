@@ -1016,6 +1016,26 @@ mod tests {
         assert_eq!(a.font_urls[0].url, "https://example.com/serif.woff2");
     }
 
+    #[test]
+    fn font_preload_with_crossorigin_empty_string_not_counted() {
+        // crossorigin="" is equivalent to crossorigin="anonymous" per HTML spec — must not fire.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2" crossorigin="">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_font_no_crossorigin, 0);
+    }
+
+    #[test]
+    fn font_preload_with_crossorigin_use_credentials_not_counted() {
+        // crossorigin="use-credentials" is valid for fonts from credentialed origins — must not fire.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2" crossorigin="use-credentials">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_font_no_crossorigin, 0);
+    }
+
     // ── meta tags ─────────────────────────────────────────────────────────────
 
     #[test]
