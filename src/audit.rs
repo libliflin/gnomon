@@ -1538,4 +1538,18 @@ mod tests {
         let fetched = vec![fetched_with_ct(Some("image/jpeg"), Some("connection refused"))];
         assert!(img_format_violation(&fetched).is_none());
     }
+
+    #[test]
+    fn count_legacy_images_mixed_formats_counts_only_legacy() {
+        // Real pages serve a mix: some legacy JPEG/PNG, some modern WebP/AVIF.
+        // Only the legacy images should contribute to the count — modern images
+        // must not suppress or dilute it.
+        let fetched = vec![
+            fetched_with_ct(Some("image/jpeg"), None),
+            fetched_with_ct(Some("image/webp"), None),
+            fetched_with_ct(Some("image/png"), None),
+            fetched_with_ct(Some("image/avif"), None),
+        ];
+        assert_eq!(count_legacy_images(&fetched), 2);
+    }
 }
