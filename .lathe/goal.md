@@ -1,72 +1,67 @@
-# Goal — Cycle 17
+# Goal — Cycle 18
 
 ## What
 
-Add two fields to `AuditReport` in `src/audit.rs` so the JSON output is self-contained:
+The `total` bytes violation currently fires with no contributor names. In `src/audit.rs` at line 209:
 
 ```rust
-#[derive(Debug, Serialize)]
-pub struct AuditReport {
-    pub url: String,
-    pub gnomon_version: &'static str,
-    pub preset: &'static str,   // ← new
-    pub pass: bool,              // ← new
-    pub elapsed_ms: u128,
-    // ... rest unchanged
-}
+bytes_check(&mut violations, "total", totals.total_bytes, budget.preset.bytes.total, &[]);
 ```
 
-Populate them in `audit_url` at the `AuditReport` construction site (near line 336):
+The `&[]` means the detail string is always `"X over Y budget"` with nothing after it. Change this to pass the top byte categories as contributors, so the violation reads:
 
-```rust
-Ok(AuditReport {
-    url: url_str.to_string(),
-    gnomon_version: env!("CARGO_PKG_VERSION"),
-    preset: budget.preset.name,
-    pass: violations.is_empty(),
-    elapsed_ms: started.elapsed().as_millis(),
-    // ... rest unchanged
-})
+```
+total: 100 KiB over 300 KiB budget — images (82 KiB), css (13 KiB)
 ```
 
-No change to `print_human` — it already reads `budget.preset.name` separately. No change to `print_json` — `#[derive(Serialize)]` handles the new fields automatically. The JSON output changes: `"preset": "insley"` and `"pass": true/false` appear between `gnomon_version` and `elapsed_ms`.
+Before the `bytes_check` call for total, build a category contributors vec from the five byte totals (`html_brotli`, `css_bytes`, `js_bytes`, `image_bytes`, `font_bytes`). Filter to non-zero values only. Sort descending by size. Pass it to `bytes_check` instead of `&[]`.
 
-Add two tests in `src/audit.rs` pinning the new fields. `AuditReport` fields are `pub`, so direct struct construction works — no network call needed:
+The category names ("html", "css", "js", "images", "fonts") are not valid URLs, so `url_filename` falls through to its `url.to_string()` fallback and returns them unchanged — no changes to `url_filename` or `bytes_check` needed. The inline style/script synthetic entries ("(inline <style>)", "(inline <script>)") already rely on this same fallback pattern.
 
-1. `audit_report_preset_field_reflects_budget_name` — construct `AuditReport { preset: "mcmaster", pass: true, violations: vec![], ... }` and assert `report.preset == "mcmaster"` and `report.pass`.
-2. `audit_report_pass_false_when_violations_present` — same with `pass: false` and one violation in the vec → `!report.pass`.
+Add two tests:
 
-No new types beyond the two fields. No behavior change to the audit logic itself.
+1. `total_bytes_violation_names_top_two_categories` — build a `category_contributors` vec with three non-zero categories (e.g., css 150 KiB, images 100 KiB, js 50 KiB), call `bytes_check` with total exceeding budget, assert the detail contains the top two category names and not the third.
+2. `total_bytes_violation_omits_zero_byte_categories` — include one zero-byte category in the contributors vec (simulating e.g., fonts=0), assert it does not appear in the detail.
+
+No changes to `bytes_check`. No new types. No schema changes. Only the call site on line 209 and two tests.
 
 ## Which Stakeholder
 
-**The CI integrator** (stakeholder 2). Last served cycle 13 — four cycles ago. Most under-served stakeholder in the current rotation.
+**The team technical lead / budget owner** (stakeholder 3). Last served cycle 14 — four cycles ago. Most under-served stakeholder in the current rotation.
 
-Step 5 of their journey: "Try `gnomon audit --format json` and check exit codes." The CI integrator who builds dashboard tooling on top of gnomon's JSON output hits a trust gap: the JSON has `violations`, `totals`, `html_analysis` — but no `preset` and no explicit `pass`. Human output says `preset: mcmaster`. Machine output says nothing about which budget was applied or whether the audit passed.
+Step 4 of their journey: "Read a failing violation aloud." The budget owner's authority signal is "when gnomon says fail, I can defend it." When `total` is the only violation — every individual category passes its own budget, but their sum exceeds the total — the violation reads `"100 KiB over 300 KiB budget"` with no further context. The reviewer asks "which categories?" The budget owner has to go back to the full report.
 
 ## Why Now
 
-Four cycles since the CI integrator was served (cycle 13 added pre-built binaries). The CI snippet is clean, exit codes work, `gnomon.toml` auto-discovery works. The remaining confidence gap is the JSON output.
+Four cycles since the budget owner was served. Individual bytes violations (css, js, images, fonts) name their top 2 contributors. The total bytes violation names nothing. This asymmetry is visible and off-brand: the tool that names things precisely in every other bytes violation is silent at the one that shows the full picture.
 
-The specific moment: `gnomon audit https://example.com --format json`. Search the JSON for "insley" or "mcmaster" — nothing. Search for "pass" or "fail" — nothing. The violations array says what failed. Nothing says which budget it was checked against.
+The scenario where this breaks authority hardest: every category passes its individual budget but the sum exceeds total. Only `total` fires. The violation says `"100 KiB over 300 KiB budget"`. The budget owner pastes this into a PR comment — no path from that line to what needs trimming. Gnomon already has the answer at the call site.
 
-Human output is more informative than machine output. That's backwards. A CI gate that bills itself as "precision, certainty, and no apology" should be most precise in its machine-readable format — the one tooling consumes, dashboards store, and trend lines are built from. Every entry in that time series should be self-describing. If five runs used the insley preset and five used mcmaster (because someone quietly changed `gnomon.toml`), nothing in the JSON would show that boundary.
-
-This is an additive schema change — new fields, no removals. JSON consumers that ignore unknown fields see no breakage. The change is two lines in `AuditReport`, two lines at the construction site, two tests.
+Same class as cycles 4, 6, 8, and 14: data is in scope at the violation check site, the violation detail doesn't use it.
 
 ## Lived-Experience Note
 
-*I became the CI integrator. Build clean, 112 tests passing. I read the README CI Integration section — the snippet was there, exit codes documented, the auto-discovery note was clear.*
+*I became the budget owner. Floor clean — 114 tests passing, clippy clean.*
 
-*I ran `gnomon audit https://example.com` — human output: `preset: insley`, one violation (`charset_meta`), `FAIL`. Clear.*
+*`gnomon presets` — both presets well-commented. `gnomon budget-init --preset insley` — clean, committed to repo.*
 
-*Then I switched to `--format json` to build my dashboard. Exit code 1. I read the JSON. I searched for "insley". Not there. I searched for "preset". Not there. I searched for "pass" or "fail" or "result". Nothing.*
+*I mentally simulated a realistic site on the insley preset: html 8 KiB (at 8 KiB limit), css 13 KiB (under 14 KiB), images 82 KiB (just over 80 KiB — wait, that fires images). I adjusted: html 7 KiB, css 12 KiB, images 82 KiB. Each category under its own budget. Sum: 101 KiB. Total budget: 100 KiB. One violation fires:*
 
-*The violations array told me WHAT failed. But the JSON had no record of WHICH STANDARD it was checked against. If I have ten entries in my dashboard's time series, and five used the insley preset and five used mcmaster (because someone changed `gnomon.toml`), my trend line would be comparing apples to oranges. Nothing in the JSON would flag that.*
+```
+✗  bytes      total                     1 KiB over 100 KiB budget
+```
 
-*The worst moment: `gnomon audit https://example.com --format json | jq '.pass'` returns `null`. `| jq '.preset'` returns `null`. The JSON record that lives in my database and powers my graphs carries no record of what it was checked against. The human output that disappears after a CI run does.*
+*I tried to paste that into Slack. My teammate asked: "Which category pushed it over?" I had to go back to the bytes table. Gnomon knew: images was 82 KiB, css was 12 KiB. But the violation said nothing.*
 
-*The confidence signal — "when this passes, I trust it" — requires knowing what "it" was checked against. When the JSON says `"violations": []`, it should also say `"preset": "mcmaster"` and `"pass": true`. Otherwise I'm trusting a pass against an unknown standard.*
+*Then I looked at the css violation output from a different audit:*
+
+```
+✗  bytes      css                       2 KiB over 14 KiB budget — vendor.css (10 KiB), main.css (4 KiB)
+```
+
+*Named contributors, pastable, self-contained. The css violation names its top 2 files. The total violation names nothing. The tool that names things precisely in every other bytes violation is silent at the violation that shows the full picture.*
+
+*The authority signal broke at the total violation. "When this says fail, I can defend it" — I could not. Not because the violation was wrong, but because it gave no path from "something is over" to "here's what to trim."*
 
 ---
 
