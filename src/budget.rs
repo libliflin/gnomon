@@ -963,6 +963,40 @@ mod tests {
     }
 
     #[test]
+    fn allowlist_expired_entry_error_message_exact_pin() {
+        // Pin the full error string so any format change is caught immediately.
+        // This is the message the budget owner copies to a ticket or PR comment.
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 5,
+            justification: "Analytics vendor — PERF-42 — replace by 2020-01-01".to_string(),
+            expires: "2020-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"third_party_domains\" expired on 2020-01-01 \
+             (Analytics vendor — PERF-42 — replace by 2020-01-01) \
+             — tighten the budget or update the expiry"
+        );
+    }
+
+    #[test]
+    fn allowlist_wip_placeholder_is_rejected() {
+        // "wip" is in PLACEHOLDER_JUSTIFICATIONS but has no dedicated test.
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 5,
+            justification: "wip".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        assert!(err.to_string().contains("placeholder justification"));
+    }
+
+    #[test]
     fn gnomon_toml_with_expired_allowlist_fails_resolve_budget() {
         let _lock = CWD_LOCK.lock().unwrap();
         let _cwd = CwdGuard::new();
