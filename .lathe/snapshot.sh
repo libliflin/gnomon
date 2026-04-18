@@ -43,10 +43,12 @@ echo
 echo "## Tests"
 TEST_OUT=$(_timeout 120 cargo test 2>&1) || true
 
-# Sum counts across all test suites (unit + doc + integration)
+# Sum counts across all test suites (unit + doc + integration).
+# Use grep -oE to extract "NNN <field>" — avoids greedy sed capturing only
+# the last digit of multi-digit numbers (e.g. "85 passed" → "5").
 _sum_field() {
   echo "$TEST_OUT" | grep -E "^test result:" \
-    | sed -E "s/.*([0-9]+) $1.*/\1/" \
+    | grep -oE "[0-9]+ $1" \
     | awk '{s+=$1} END {print s+0}'
 }
 PASS=$(_sum_field "passed")
