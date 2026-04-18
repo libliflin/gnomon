@@ -169,6 +169,16 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
         }
     }
 
+    // Inline bytes count toward the budget totals (lines 102–103). Surface them
+    // as named contributors so the violation detail says "(inline <style>)" rather
+    // than staying silent when external files are absent or smaller.
+    if analysis.inline_style_bytes > 0 {
+        css_resources.push(("(inline <style>)".to_string(), analysis.inline_style_bytes));
+    }
+    if analysis.inline_script_bytes > 0 {
+        js_resources.push(("(inline <script>)".to_string(), analysis.inline_script_bytes));
+    }
+
     // Sort each category descending by size so top contributors are first.
     css_resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
     js_resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
@@ -189,42 +199,6 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     let mut violations = Vec::new();
 
     // Byte budgets.
-    fn bytes_check(
-        vios: &mut Vec<Violation>,
-        metric: &'static str,
-        actual: u64,
-        budget: u64,
-        top: &[(String, u64)],
-    ) {
-        if actual > budget {
-            let mut detail = format!(
-                "{} over",
-                humansize::format_size(actual.saturating_sub(budget), humansize::BINARY)
-            );
-            let contributors: Vec<String> = top
-                .iter()
-                .take(2)
-                .map(|(url, bytes)| {
-                    format!(
-                        "{} ({})",
-                        url_filename(url),
-                        humansize::format_size(*bytes, humansize::BINARY)
-                    )
-                })
-                .collect();
-            if !contributors.is_empty() {
-                detail.push_str(" — ");
-                detail.push_str(&contributors.join(", "));
-            }
-            vios.push(Violation {
-                kind: ViolationKind::Bytes,
-                metric,
-                budget,
-                actual,
-                detail,
-            });
-        }
-    }
     bytes_check(&mut violations, "html", totals.html_brotli, budget.preset.bytes.html, &[]);
     bytes_check(&mut violations, "css", totals.css_bytes, budget.preset.bytes.css, &css_resources);
     bytes_check(&mut violations, "js", totals.js_bytes, budget.preset.bytes.js, &js_resources);
@@ -377,6 +351,45 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
         totals,
         violations,
     })
+}
+
+/// Appends a `ViolationKind::Bytes` entry to `vios` when `actual > budget`.
+/// `top` is already sorted descending by size; up to 2 contributors are named.
+fn bytes_check(
+    vios: &mut Vec<Violation>,
+    metric: &'static str,
+    actual: u64,
+    budget: u64,
+    top: &[(String, u64)],
+) {
+    if actual > budget {
+        let mut detail = format!(
+            "{} over",
+            humansize::format_size(actual.saturating_sub(budget), humansize::BINARY)
+        );
+        let contributors: Vec<String> = top
+            .iter()
+            .take(2)
+            .map(|(url, bytes)| {
+                format!(
+                    "{} ({})",
+                    url_filename(url),
+                    humansize::format_size(*bytes, humansize::BINARY)
+                )
+            })
+            .collect();
+        if !contributors.is_empty() {
+            detail.push_str(" — ");
+            detail.push_str(&contributors.join(", "));
+        }
+        vios.push(Violation {
+            kind: ViolationKind::Bytes,
+            metric,
+            budget,
+            actual,
+            detail,
+        });
+    }
 }
 
 /// Formats the detail string for a render_blocking count violation.
@@ -632,6 +645,83 @@ mod tests {
             fonts_count_detail(1, &fonts),
             "1 over — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
         );
+    }
+
+    // ---- bytes_check with inline synthetic contributors ----
+
+    #[test]
+    fn css_inline_only_shows_inline_style_contributor() {
+        // No external CSS files; all bytes are inline. The synthetic "(inline <style>)"
+        // entry must appear as the contributor.
+        let mut vios: Vec<Violation> = Vec::new();
+        // 1.67 MiB inline, 0 budget → over = 1.67 MiB
+        let inline_bytes: u64 = 1_755_109;
+        let resources = vec![("(inline <style>)".to_string(), inline_bytes)];
+        bytes_check(&mut vios, "css", inline_bytes, 0, &resources);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(
+            detail.contains("(inline <style>)"),
+            "detail should name inline contributor, got: {detail}"
+        );
+    }
+
+    #[test]
+    fn js_inline_only_shows_inline_script_contributor() {
+        let mut vios: Vec<Violation> = Vec::new();
+        let inline_bytes: u64 = 460_800; // ~450 KiB
+        let resources = vec![("(inline <script>)".to_string(), inline_bytes)];
+        bytes_check(&mut vios, "js", inline_bytes, 0, &resources);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(
+            detail.contains("(inline <script>)"),
+            "detail should name inline contributor, got: {detail}"
+        );
+    }
+
+    #[test]
+    fn css_mixed_inline_large_enough_to_rank_in_top_two() {
+        // External file: 10 KiB. Inline: 50 KiB. Budget: 0.
+        // Inline is larger → must appear first (or at least within top-2).
+        let mut vios: Vec<Violation> = Vec::new();
+        let mut resources = vec![
+            ("https://cdn.example.com/small.css".to_string(), 10_240u64),
+            ("(inline <style>)".to_string(), 51_200u64),
+        ];
+        resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+        let total = 10_240 + 51_200;
+        bytes_check(&mut vios, "css", total, 0, &resources);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(
+            detail.contains("(inline <style>)"),
+            "inline contributor should appear in top-2, got: {detail}"
+        );
+    }
+
+    #[test]
+    fn css_mixed_inline_too_small_for_top_two() {
+        // Three resources: two large external files plus a tiny inline block.
+        // Inline is smaller than both external files → must not appear in top-2.
+        let mut vios: Vec<Violation> = Vec::new();
+        let mut resources = vec![
+            ("https://cdn.example.com/main.css".to_string(), 50_000u64),
+            ("https://cdn.example.com/vendor.css".to_string(), 40_000u64),
+            ("(inline <style>)".to_string(), 100u64),
+        ];
+        resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+        let total = 50_000 + 40_000 + 100;
+        bytes_check(&mut vios, "css", total, 0, &resources);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        // top-2 are main.css and vendor.css; inline is third and must be absent
+        assert!(
+            !detail.contains("(inline <style>)"),
+            "tiny inline contributor must not appear in top-2, got: {detail}"
+        );
+        assert!(detail.contains("main.css"), "main.css must be in top-2, got: {detail}");
+        assert!(detail.contains("vendor.css"), "vendor.css must be in top-2, got: {detail}");
     }
 
     #[test]
