@@ -1,31 +1,49 @@
 # Brand
 
-**Identity.** Blunt, load-bearing authority that refuses to negotiate and defines itself by what it won't be. Gnomon speaks in declaratives: not a dashboard, not a scorer, no `--warn-only`, no yellow state, no easy mode (from `PLAN.md:9-10,56-59,622-623`; from `Cargo.toml` description: `"A CI gate, not a dashboard."`). The name is a signal: a gnomon reveals rather than evaluates — "ancient, exact, cheap, and correct for a thousand years without maintenance" (`PLAN.md:659`). It is not trying to be liked; it is trying to be right.
+## Identity
+
+Precise, clinical, unapologetic. Gnomon names what it sees — "LCP gaming," "theater," "33 KiB over" — and does not soften the language to protect the reader's feelings. It earns authority by never negotiating with bad defaults, and it applies that same standard to itself (from `PLAN.md §13`: "The tool audits its own build time. That is not a joke."). The project knows exactly what it is and is not, and the boundary is stated as a fact, not a policy.
+
+Archetype: the gnomon itself. It doesn't tell you the time — it reveals it. The shadow is what was always there.
 
 ---
 
 ## How we speak
 
-**When we say no.** Precise, unhedged, no apology. "`--warn-only` — Does not exist. Will not be added. A PR proposing it will be closed." (`PLAN.md:424–426`). "If a user wants any of these, they are looking for a different tool." (`PLAN.md:431`). No "we recommend," no "consider," no softer framing. The refusal is the feature.
+**When we say no.**
+Categorical and final, not apologetic. "There is no `--warn-only` flag. Does not exist. Will not be added. A PR proposing it will be closed." (from `PLAN.md §6`). Not "we've decided not to support this at this time." The refusal is the position; no elaboration earns a softer landing.
 
-**When we fail.** Name what fired, state the overage, and — when the cause is a recognized pattern — name the pattern. `"first <img> has loading=\"lazy\" — likely LCP gaming"` (`audit.rs:264`). `"14.7 KiB over"` (`audit.rs:178–183`). Errors prefix with `gnomon:` and end with the raw reason: `"gnomon: root fetch of {url} returned HTTP 404"` (`audit.rs:52–53`; `main.rs:23–24`). No stack trace in the lead. No apology before the fact.
+The pattern extends to the non-goals list (`PLAN.md §16`): "Different problem, different tool." Two sentences. Done.
 
-**When we explain.** One clause, reason-first, next step when one exists. `"Google Tag Manager — opens the door to anything"`. `"polyfill.io — compromised in 2024"`. `"Intercom chat widget — use a mailto link"`. `"Google Fonts — self-host and subset your fonts"` (all from `forbidden.rs:9–18`). The explanation is in the violation label itself, not a follow-up paragraph.
+**When we fail.**
+One line. The number first, then what pushed it over. `"33 KiB over — main.css (28 KiB), vendor.css (5 KiB)"` (from `src/audit.rs:203–225`). Not "you may be exceeding your CSS budget." The detail is actionable by design; you can paste it into a PR comment and it stands on its own.
 
-**When we onboard a new user.** Two sentences, no preamble. `"Performance budget auditor. A CI gate, not a dashboard."` (`Cargo.toml` description; `cli.rs:11–12`). The `--help` long description repeats the pass/fail framing a second time and doesn't soften it. New users learn what gnomon is by reading what it isn't.
+Fetch and config errors prefix with the tool name and give the bare cause: `gnomon: {e:#}` (from `src/main.rs:24`). No apology. No suggestion to "try again later."
 
-**When we celebrate.** Quiet. `"PASS  all budgets met"` — PASS in green and bold; the descriptor in dim (`report.rs:80`). The tool doesn't congratulate the site. It confirms the gate held. A clean build is the expected outcome, not an occasion.
+**When we name a bad practice.**
+We call it what it is. The lazy-loaded LCP element violation reads: `"first <img> has loading=\"lazy\" — likely LCP gaming"` (from `src/audit.rs:301`). Not "potential anti-pattern." Not "may affect Lighthouse scores." The word is "gaming." The section in PLAN.md is titled "Anti-theater" — not "potential concerns" or "performance gotchas."
+
+**When we onboard a new user.**
+The `--help` about line: `"Performance budget auditor. A CI gate, not a dashboard."` (from `src/cli.rs:11`). One sentence. Binary distinction. Then immediately: exit codes, commands, what's working, what's coming. The README opens with the sundial metaphor and moves to `cargo install gnomon` within a page. No feature-list preamble.
+
+**When we pass.**
+`PASS  all budgets met` — green, one line, understated (from `src/report.rs:80`). The success case is quieter than the failure case. This is intentional: passing is the expected state; failure is the exception that needs attention.
+
+**When we explain an internal decision.**
+Even in source comments, the voice holds. From `src/audit.rs:369–370`: `"Naive eTLD+1 for third-party comparison. Falls short on .co.uk etc., but good enough for v0.0.2 — the error case is 'we undercount third parties on multi-suffix TLDs,' which means we're generous to the site, not harsh."` — acknowledges the flaw, names the failure mode, states which direction it errs. Transparency without hedging.
 
 ---
 
 ## The thing we'd never do
 
-We'd never introduce a severity gradient. There are violations and non-violations; there is no warning tier, no yellow state, no "technically over but marginal" (`PLAN.md:622–623`: "There are violations and non-violations. There is no yellow state."). Every violation type — `bytes`, `count`, `forbidden`, `theater` — exits 1. Softening one violation into a warning would unravel the only thing that makes the gate trustworthy: it never negotiates. The moment the tool can be talked down to a warning, operators stop acting on it.
+We'd never graduate a violation into a warning. "There are violations and non-violations. There is no yellow state." (from `PLAN.md §16`). The temptation is real — a yellow state is "user-friendly." Gnomon rejects it because a gate that flickers is not a gate. Any output format, any future feature, any addition to the CLI that introduces a third verdict state is off-brand. PASS and FAIL are the whole vocabulary.
 
 ---
 
 ## Signals to preserve
 
-- **`gnomon: <subject> <reason>`** — errors always carry the tool name as prefix and the raw cause at the end. Never just a code, never just a message without context (`main.rs:15,23–24`).
-- **`"<domain> — <one-clause reason>"`** — the forbidden list entry rhythm: domain first, em-dash, reason in one clause, next step when one exists (`forbidden.rs:9–23`). This pattern should hold as the list grows.
-- **Pass is quiet, fail is specific** — `"all budgets met"` in dim vs. type + metric + overage per violation (`report.rs:80,88–104`). These two registers should never swap: the pass verdict earns its silence by having fail be precise.
+1. **`PASS` / `FAIL` in all-caps.** Every verdict is uppercase, final, unambiguous. Not "passed," not "success." The word is a binary state, not a description.
+
+2. **The em-dash as separator in violation details.** `"33 KiB over — main.css (28 KiB), vendor.css (5 KiB)"`. The em-dash separates the verdict from the evidence. It's the breath between "what happened" and "who did it." Preserve this rhythm in any new violation type.
+
+3. **Categorical negation in refusals.** "Does not exist. Will not be added." Not "is not currently supported." The present tense and the future tense both close the door. When gnomon refuses something, the refusal is a design decision, not a roadmap note.

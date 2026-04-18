@@ -1,76 +1,63 @@
-# Domain Map
+# Domain Boundaries — Gnomon
 
-Gnomon operates across several domains of knowledge, each with its own authority. When a bug or design question arises, this map tells you which domain to consult first.
-
----
-
-## Domain 1: Web Performance Metrics
-
-**What it covers:** LCP, CLS, INP, TTFB, FCP, TBT, TTI. What these metrics measure, how browsers compute them, and what site behaviors move them.
-
-**Authoritative source:** web.dev/articles/*, Chrome DevTools documentation, the Web Vitals JS library source. The W3C Long Tasks API and Layout Instability API specs.
-
-**Where the boundary creates confusion:** Gnomon's "predicted LCP" is a static approximation of a browser-measured metric. A question like "why does gnomon's predicted LCP differ from Lighthouse's LCP?" lives at the boundary between this domain and Domain 2 (static analysis). The answer is almost always: Lighthouse measures; gnomon predicts from wire bytes. When they disagree, the browser measurement is ground truth.
+Gnomon operates across several distinct domains. Each has its own authority. Bugs that look like they belong to one domain often trace to another — knowing the map prevents wasted effort.
 
 ---
 
-## Domain 2: Static HTML/CSS/JS Analysis
+## 1. Web standards (HTML/CSS/resource loading)
 
-**What it covers:** Parsing HTML documents, extracting resource references, classifying assets, detecting render-blocking patterns, measuring inline bytes.
+**What it covers:** What counts as "render-blocking," how brotli transfer size relates to content-type, what `loading="lazy"` does to LCP timing, how `<link rel="preload">` interacts with the render-critical path, what the first 800px viewport means for above-fold budgets.
 
-**Authoritative source:** The HTML Living Standard (whatwg.org/html), the CSS spec, the JavaScript spec. For "what is render-blocking," the Chromium Preload Scanner source is more authoritative than any spec — browsers implement heuristics.
+**Authority:** WHATWG HTML spec, W3C CSS specs, MDN, web.dev. For LCP/CLS/INP definitions: web.dev/vitals and the Chrome team's explainers.
 
-**Where the boundary creates confusion:** A `<link rel="preload" as="style">` is technically not render-blocking per spec, but Gnomon flags it as theater because real-world sites use it to hide CSS from render-blocking detection. The authority here is not the spec — it's the known gaming technique. When adding new checks, ask: "Is this spec-defined behavior, or a browser-specific heuristic, or a documented gaming trick?"
-
----
-
-## Domain 3: HTTP and Network Behavior
-
-**What it covers:** Transfer encoding, content negotiation, brotli/gzip compression, CDN behavior, redirect chains, CORS, cache headers.
-
-**Authoritative source:** RFC 9110 (HTTP Semantics), RFC 7932 (Brotli), MDN documentation.
-
-**Where the boundary creates confusion:** Gnomon recomputes brotli size from the raw body because CDNs lie about content-length. This is Domain 3 behavior. But the *budget* against which we compare is a Domain 2 number (byte budget for a resource type). When a byte budget check behaves unexpectedly, check whether the CDN is doing something unusual in the HTTP layer before assuming the analysis code is wrong.
+**Where confusion appears:** Gnomon's definitions of "render-blocking" and "above fold" are intentionally stricter than the browser's native behavior. This is by design (PLAN.md §4 anti-theater). A bug report like "this isn't actually render-blocking" may be correct by the browser spec but wrong for gnomon's purpose. The authority for gnomon's definitions is PLAN.md §4 and §7, not the spec alone.
 
 ---
 
-## Domain 4: Rust and the Cargo Ecosystem
+## 2. HTTP semantics and transfer encoding
 
-**What it covers:** Rust language semantics, the borrow checker, async/await with tokio, Cargo features and workspaces, crates.io publishing.
+**What it covers:** Brotli vs. gzip vs. raw content, `Content-Encoding` headers, CDN-reported sizes vs. actual wire bytes, HTTP status codes, response timing.
 
-**Authoritative source:** The Rust Reference, the Rustonomicon, the Cargo Book, the Tokio documentation.
+**Authority:** RFC 7230–7235 (HTTP/1.1), RFC 7932 (Brotli), RFC 9110–9114 (HTTP/2 and HTTP/3 basics for awareness). In practice: the `reqwest` and `brotli` crate docs.
 
-**Where the boundary creates confusion:** Gnomon uses `scraper` (which uses `html5ever`) for HTML parsing. `html5ever` follows the HTML Living Standard parsing algorithm — not just tokenization. A question about "why does gnomon detect this element differently than I expected" may be a Rust crate behavior question (Domain 4), an HTML parsing spec question (Domain 2), or a bug. Check the crate docs before assuming a spec mismatch.
-
----
-
-## Domain 5: CI/CD and GitHub Actions
-
-**What it covers:** GitHub Actions workflow syntax, SARIF 2.1.0 schema, GitHub code scanning integration, PR annotations, precompiled binary distribution.
-
-**Authoritative source:** docs.github.com/actions, the SARIF 2.1.0 spec (Microsoft), GitHub's code scanning documentation.
-
-**Where the boundary creates confusion:** SARIF violations require a "ruleId" and a "location" (file + line number). For gnomon, violations are detected at the *page* level (a URL), not at a specific source line. The question of how to map a "your total JS exceeds budget" violation to a SARIF location lives at the boundary of Domain 2 and Domain 5. The answer gnomon will use: point at `gnomon.toml` as the location when the budget is the contract, and at the offending HTML file when the HTML is the source.
+**Where confusion appears:** CDNs sometimes report compressed size in `Content-Length` that doesn't match what they actually delivered. Gnomon recompresses content itself to get a canonical brotli size. If byte totals seem wrong, suspect the fetch → brotli-recompression pipeline in `fetch.rs`, not the budget comparisons in `audit.rs`.
 
 ---
 
-## Domain 6: The insley-web Performance Standard
+## 3. Performance measurement methodology
 
-**What it covers:** The `insley` and `mcmaster` presets — what the numbers mean, why they were chosen, and what the standard is trying to enforce.
+**What it covers:** Lighthouse methodology, Core Web Vitals measurement windows (LCP, CLS, INP), how synthetic vs. field data differ, what "Slow 4G" means as a throttle setting, what "cold cache" means for measurement reproducibility.
 
-**Authoritative source:** `PLAN.md` in this repo. The insley-web reference site. The McMaster-Carr case study (referenced in PLAN.md §1).
+**Authority:** web.dev, Chrome DevTools team explainers, the Lighthouse source. For gnomon's deviations: PLAN.md §4 (anti-theater) and §7.2 (predicted vitals).
 
-**Where the boundary creates confusion:** PLAN.md describes what the standard *is*, not what it *measures*. A question like "should we count WebP images against the image budget using raw bytes or brotli bytes?" is partly Domain 6 (what the standard intends) and partly Domain 2 (how we measure). When standard intent and measurement differ, the standard intent wins — update the measurement.
+**Where confusion appears:** Gnomon's TTI definition (50 ms of main-thread idle *after* hydration completes, not before) differs from Lighthouse's. Predicted vitals are upper bounds, not actual measurements. A passing prediction + `--measure` failure is expected behavior, not a bug.
 
 ---
 
-## Quick reference: who to ask about what
+## 4. Rust language and compiler behavior
 
-| Question | Domain |
-|---|---|
-| Why does this LCP value differ from Lighthouse? | 1 — Web Performance Metrics |
-| Is this `<link>` render-blocking or not? | 2 — Static HTML/CSS/JS Analysis |
-| Why does gnomon's byte count differ from the CDN's? | 3 — HTTP and Network |
-| Why does this async pattern cause a compilation error? | 4 — Rust/Cargo |
-| How do I map a violation to a SARIF location? | 5 — CI/CD and GitHub |
-| Should fonts count against the total byte budget? | 6 — insley-web Standard |
+**What it covers:** Ownership, lifetimes, async/await (tokio), Cargo workspace layout (future), clippy lints, edition 2024 features (let chains, etc.).
+
+**Authority:** The Rust Reference, Clippy docs, Cargo book. For async: tokio docs.
+
+**Where confusion appears:** Edition 2024 let-chain syntax (`if let Some(x) = foo && let Some(y) = bar(x)`) is valid but may surprise contributors from older editions. Clippy's `collapsible_if` lint requires it. When in doubt, `cargo clippy` is authoritative.
+
+---
+
+## 5. CI and GitHub integration
+
+**What it covers:** GitHub Actions syntax, SARIF 2.1.0 format, branch protection rules, the gnomon-action (planned).
+
+**Authority:** GitHub Actions docs, SARIF spec, GitHub code scanning docs.
+
+**Where confusion appears:** No CI workflows exist yet. The snapshot.sh runs `cargo build/test/clippy` locally as a substitute. When the champion says "CI is red," they mean the snapshot.sh output, not a GitHub Actions run.
+
+---
+
+## 6. The insley-web thesis and positioning
+
+**What it covers:** Why gnomon exists, what "enforcing the standard" means culturally, which sites gnomon uses as benchmarks (McMaster-Carr, gov.uk, old Craigslist), what the `insley` preset name refers to.
+
+**Authority:** PLAN.md §1, §17, §18. The README opening paragraph. The manifesto at the root of this project.
+
+**Where confusion appears:** The insley preset and the insley-web project are related but distinct. `insley` is a preset (a set of budget numbers). `insley-web` is the broader thesis project (PLAN.md §17). Gnomon is the tooling arm; insley-web is the reference implementation. Don't conflate them when deciding whether a budget number change is a gnomon decision or an insley-web decision.

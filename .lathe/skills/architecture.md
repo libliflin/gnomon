@@ -1,86 +1,66 @@
-# Architecture
+# Architecture — Gnomon
 
-## Current structure (v0.0.2)
+## Current state (v0.0.2)
 
-Gnomon is a single Cargo crate at this point — the multi-crate workspace described in PLAN.md §14 is planned but not yet implemented. Everything lives in `src/`.
+Gnomon is a single crate with a flat `src/` structure:
 
 ```
 src/
-  lib.rs         — public API surface; re-exports audit_url, AuditReport, Budget, Preset, Violation, ViolationKind
-  main.rs        — thin CLI entry point; builds tokio runtime, dispatches to subcommands
-  cli.rs         — clap definitions: Cli, Command, AuditArgs, BudgetInitArgs, OutputFormat
-  audit.rs       — core audit loop: fetches root HTML, analyzes, fetches sub-resources, computes totals, assembles violations
-  analyze.rs     — HTML analysis: parses HTML with scraper, extracts script/style/image/font URLs, detects anti-theater patterns
-  budget.rs      — Budget and Preset types; preset definitions (insley, mcmaster); TOML config loading; preset TOML generation
-  fetch.rs       — HTTP client (reqwest); Fetcher for root fetch + concurrent sub-resource fetch; brotli recompression
-  forbidden.rs   — FORBIDDEN blocklist (Aho-Corasick automaton); ForbiddenMatcher
-  report.rs      — human-readable output (owo-colors); JSON output (serde_json)
+  main.rs        — thin entrypoint; delegates to cli.rs
+  cli.rs         — clap CLI definitions (Cli, Command, AuditArgs, BudgetInitArgs, OutputFormat)
+  lib.rs         — pub re-exports (AuditReport, audit_url, Budget, Preset, Violation, ViolationKind)
+  audit.rs       — orchestrates a full URL audit: fetch root, analyze HTML, fetch resources, check violations
+  analyze.rs     — HTML parsing via `scraper`; produces HtmlAnalysis (byte counts, resource refs, render-blocking, anti-theater signals)
+  budget.rs      — preset definitions (Insley, McMaster); Budget + Preset types; TOML-configurable (partial)
+  fetch.rs       — HTTP fetch via reqwest; Fetcher, Fetched, brotli recompression
+  forbidden.rs   — Aho-Corasick automaton over the hardcoded forbidden list; ForbiddenMatcher
+  report.rs      — human-readable and JSON output for AuditReport
   violation.rs   — Violation and ViolationKind types
 ```
 
-## Key data flow
+## Planned architecture (PLAN.md §14)
 
+The design calls for a multi-crate workspace:
 ```
-CLI args → resolve_budget() → audit_url()
-                                  ↓
-                        fetch_root() → HTML body
-                                  ↓
-                        analyze_html() → HtmlAnalysis
-                                  ↓
-                        fetch_many(sub-resources) → Vec<Fetched>
-                                  ↓
-                        aggregate Totals
-                                  ↓
-                        check violations (bytes, counts, forbidden, theater)
-                                  ↓
-                        AuditReport → print_human / print_json
+crates/
+  gnomon-core       — shared types
+  gnomon-static     — HTML/CSS/JS/font/image analysis, no I/O
+  gnomon-predict    — predicted vitals
+  gnomon-antitheater — theater detection rules
+  gnomon-measure    — headless browser (feature-gated)
+  gnomon-crawl      — URL enumeration
+  gnomon-report     — output formatters
+  gnomon-cli        — thin CLI shell
+  gnomon-data       — presets, forbidden list, bench corpora
 ```
 
-## Where checks live
+This split has not happened yet. All code lives in the single `gnomon` crate. The lib.rs exists so audit logic can be tested without going through the CLI.
 
-**Anti-theater rules** — currently in `audit.rs` (the `lazy_lcp_candidate` and `viewport_meta` checks). The HTML analyzer (`analyze.rs`) sets the flags; `audit.rs` converts them to violations.
+## Key design decisions
 
-**Forbidden list** — `forbidden.rs` builds the Aho-Corasick automaton at call time. Checked against every fetched URL and every HTML-declared resource URL in `audit.rs`.
+**Fail-closed everywhere.** Missing `gnomon.toml` fails. Unknown keys fail. Stale budgets fail. The tool has no `--warn-only` mode and never will.
 
-**Byte budgets and count budgets** — inline in `audit.rs` via `bytes_check` and `count_check` closures.
+**Brotli recompression.** Gnomon recomputes transfer size itself — it does not trust CDN-reported `Content-Encoding` headers. This catches the "CDN brotlis it to 4KB but inflated is 2MB" trick.
 
-## What's not yet implemented (as of v0.0.2)
+**Inline bytes count.** Inline `<style>` and `<script>` content is counted toward CSS/JS budgets respectively. You can't hide bytes by inlining them.
 
-- `--dir` mode: audit a local directory of built assets without a server
-- `gnomon ci` subcommand
-- SARIF output
-- Predicted vitals (LCP, CLS, JS parse time)
-- `--measure` (headless browser, chromiumoxide)
-- `budget tighten` (ratchet)
-- `budget update` (refresh pinned forbidden list)
-- `budget explain <id>`
-- `gnomon diff` (compare against base ref)
-- `gnomon watch`
-- `gnomon crawl`
-- Per-route config in gnomon.toml (the TOML parser exists but routes/justifications/expiries are not parsed)
-- SARIF schema for violations
-- gnomon.lock for forbidden list pinning
+**Aho-Corasick for forbidden list.** The forbidden domain/script list is compiled to an automaton at startup and reused across all URL checks.
 
-## Public API surface
+**`--dir` mode is not yet implemented.** README and PLAN.md describe auditing a local built directory, but the current CLI only supports `--url`. The `AuditArgs` struct has no `dir` field.
 
-Exported from `lib.rs`:
-- `audit_url(url: &str, budget: &Budget) -> anyhow::Result<AuditReport>` — async
-- `AuditReport` — full audit result with url, violations, totals, html, resources, html_analysis
-- `Budget` — holds a single `Preset`; constructed via `Budget::from_preset(PresetName)` or `resolve_budget()`
-- `Preset` — name + ByteBudget + CountBudget
-- `Violation` — kind, metric, budget, actual, detail
-- `ViolationKind` — Bytes | Count | Forbidden | Theater | FetchError
+**No `--measure` yet.** The headless Chromium path (predicted vitals → real LCP/CLS/INP/TTFB) is planned for v0.3–v0.4 but not implemented.
 
-**Not exported (internal):**
-- `HtmlAnalysis`, `ResourceRef`, `AssetKind` — from analyze.rs
-- `Fetched`, `Fetcher` — from fetch.rs
-- `ForbiddenMatcher`, `FORBIDDEN` — from forbidden.rs
-- `Totals` — from audit.rs (embedded in AuditReport but not separately re-exported)
+**No SARIF output yet.** Planned for v0.2. Current `OutputFormat` enum has only `Human` and `Json`.
 
-## Notable implementation choices
+**Tests are nearly absent.** Only a `lib.rs:sanity` stub (`assert!(true)`) exists. There are no integration tests, no snapshot tests, no per-module unit tests.
 
-- **Brotli recompression:** gnomon always recomputes brotli size from the raw body. CDN content-length headers are not trusted. Quality 5 (fast, not optimal) — the goal is a consistent conservative bound.
-- **Third-party detection:** naive eTLD+1 (registrable domain = last two labels). Known limitation: undercounts on multi-suffix TLDs (`.co.uk`). Error direction is generous-to-site, which is by design.
-- **Forbidden list:** built as an Aho-Corasick automaton at each call to `ForbiddenMatcher::new()`. Should eventually be lazily initialized at program start.
-- **HTML parsing:** uses `scraper` (CSS selector based). PLAN.md mentions `lol_html` for streaming mode — not yet adopted.
-- **Render-blocking detection:** approximate. A `<script>` is render-blocking if it's in `<head>` and has no `async` or `defer`. A preload-as-style is flagged as render-blocking (anti-theater rule).
+## Performance constraints (PLAN.md §13)
+
+Gnomon has its own performance budget enforced in CI:
+- Cold start → first output: < 10 ms
+- Static audit of one page: < 1 ms
+- Full crawl of 1000-page site: < 1 s
+- Peak RSS: < 30 MB
+- Binary size: < 4 MB
+
+These are not yet wired to CI (no CI workflows exist), but they inform implementation decisions.

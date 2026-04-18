@@ -1,52 +1,42 @@
-# Alignment Summary
-
-For the human reviewing this init. Plain English.
-
----
+# Alignment Summary — Gnomon Customer Champion
 
 ## Who this serves
 
-- **Web developer evaluating gnomon** — wants to know if their site meets a real performance bar; runs `gnomon audit --url` and reads the output
-- **CI/CD pipeline operator** — wants a perf gate that exits 0/1 reliably and integrates with GitHub Actions; currently has no prebuilt path
-- **Contributor** — wants to submit a PR; hits clippy warnings and a near-empty test suite on first checkout
-- **insley-web author (William)** — uses gnomon to enforce the standard on the reference site; currently blocked from `--dir` mode and the ratchet
-- **Library consumer** — uses `audit_url()` in their own Rust code; public API surface is small but usable
-
----
+- **Web performance engineer**: installs gnomon, runs it against a URL, reads violations, decides whether to adopt it — needs momentum from the first run
+- **CI integrator**: wires gnomon into a pipeline, needs exit codes that mean something, machine-readable output, and no flake
+- **Team technical lead / budget owner**: owns gnomon.toml and explains violations to teammates, needs the output to carry its own authority
+- **Contributor**: adds rules or fixes to the codebase, needs clarity about where things go and how to test them
 
 ## Emotional signal per stakeholder
 
-- Web developer evaluating: **trust** — does the output feel like a knowledgeable peer reviewed the site?
-- CI/CD operator: **confidence** — the gate fires reliably and stays quiet when it should
-- Contributor: **momentum** — from "I want to fix this" to "I have a working, tested PR" without hitting a wall
-- insley-web author: **conviction** — using gnomon makes the standard feel real and enforced
-- Library consumer: **predictability** — you don't have to think about gnomon
-
----
+- **Web performance engineer**: momentum — "I want to tell someone about this"
+- **CI integrator**: confidence — "When it fails, it means something; when it passes, I trust it"
+- **Budget owner**: authority — "When this says fail, I can defend it to my team"
+- **Contributor**: clarity — "I know exactly where this goes and how to test it"
 
 ## Key tensions
 
-- **Hostile defaults vs first-encounter survival:** Insley preset will fail nearly every real site on first run. This is by design, but makes the evaluating developer's first experience a wall of violations with no hierarchy. Resolution signal: if you're inhabiting the evaluating developer and the violations wall is unreadable, output clarity is the goal.
-- **Static analysis completeness vs audit speed:** More checks extend audit time. The 50 ms fast-mode gate from PLAN.md §12.4 is a hard constraint. Resolution signal: if the champion's journey hits noticeable latency for a small site, speed wins.
-- **CLI evolution vs library API stability:** Adding totals and analysis fields changes the `AuditReport` type. Safe pre-1.0 while consumers are internal. Resolution signal: check the version number and known consumers before refactoring public types.
-- **`--url` vs `--dir` priority:** Most natural CI usage wants `--dir`; only `--url` exists. Resolution signal: if CI adoption or insley-web author workflow is blocked, `--dir` wins.
+- **README vs. binary**: the README describes `gnomon ci`, SARIF output, and a GitHub Action — none of which exist in v0.0.2. This is the CI integrator's dead end. Resolve toward: update docs to match reality before adding features, unless an external consumer has already been burned.
+- **Hostile defaults vs. onboarding**: gnomon is intentionally unforgiving. This is not negotiable — it's the product. The fix for an overwhelming first experience is more specificity in violation messages, not softer defaults.
+- **Tests vs. velocity**: the hollow test suite is a walking contradiction for a tool that sells enforcement. This tension resolves toward tests faster than it would for most projects.
 
----
+## Repository security (for autonomous operation)
 
-## Repository security for autonomous operation
+The lathe agent reads CI results and PR metadata from GitHub and uses them in prompts — a prompt injection attack surface.
 
-- **Default branch protection:** Not verified. The GitHub API would need to be checked. Assumption: not protected (new repo, no CI).
-- **GitHub Actions workflows:** None exist. No `.github/workflows/` directory. No `pull_request_target` or `issue_comment` triggers — no prompt injection surface via CI.
-- **Repo visibility:** Public (inferred from `repository = "https://github.com/libliflin/gnomon"` in `Cargo.toml`). Lathe's goal commits will be publicly visible.
-- **Recommendation:** Add branch protection and CI before running lathe in branch mode with PRs at scale.
-
----
+**Findings (as of init, 2026-04-17):**
+- **CI workflows**: none exist (`.github/workflows/` is absent). No `pull_request_target` or `issue_comment` triggers to worry about.
+- **Branch protection**: could not be verified automatically (gh API requires auth). **Action required**: manually verify that the `main` branch has protection rules enabled (require PR reviews, require status checks).
+- **Repo visibility**: could not be verified automatically. **Action required**: if the repo is public, be especially cautious about PR title/description injection into agent prompts, since any GitHub user could open a PR.
 
 ## What could be wrong
 
-- **Missing stakeholder:** If there are downstream teams or companies already using gnomon that weren't visible in the repo (no issues, no dependents on crates.io at v0.0.2), they may have been missed. The library consumer stakeholder is inferred from the `lib.rs` public surface — it may be premature.
-- **Insley-web author conflated with William's role:** This stakeholder is assumed to be William. If there are co-authors of the reference site, their needs may differ.
-- **Emotional signal calibration:** "Conviction" for the insley-web author may be wrong if William's actual frustration isn't about conviction but about tooling speed or correctness. Walk the journey to verify.
-- **Brand.md is absent:** The champion cannot apply brand tint until `brand.md` is written from observed evidence. The project is pre-brand — the voice is visible in `PLAN.md` ("There is no easy mode. There is no gradual adoption.") but hasn't been distilled into a brand document.
-- **Clippy state:** Init snapshot logged ~9 clippy diagnostics. These are real and the builder should address them. If the champion finds clippy has been fixed by cycle 2, the floor is clean.
-- **No CI:** Every cycle's snapshot will report "No CI config found" until CI is added. The champion should treat this as a sustained signal for the CI/CD operator stakeholder.
+- **Missing stakeholder: the end user whose device is protected.** The end user never touches gnomon, but they are the ultimate beneficiary and the ethical center of the tool's design. The champion currently has no journey for them. This was intentional — there's no way to "use the project as them" because they don't interact with gnomon. But the champion should hold this stakeholder in mind when deciding between two otherwise-equal goals: which one actually helps the person whose bandwidth gnomon is protecting?
+
+- **v0.0.2 is very early.** The architecture is a single flat crate. The test suite is a stub. Several documented commands don't exist. The champion's journeys will hit walls quickly. This is appropriate — the champion should name those walls, not work around them. But the journeys in `skills/journeys.md` need to be updated as the project matures; they'll go stale by cycle 5 or 6 if the tool advances significantly.
+
+- **No `--dir` mode.** The README and PLAN.md describe auditing a local built directory (`gnomon audit --dir ./dist`), but the current `AuditArgs` only has a `url` field. The adopting engineer or CI integrator who wants to audit a built artifact before deploy will hit this gap. The champion should notice this during the CI integrator's journey.
+
+- **Insley preset vs. mcmaster preset selection.** The champion should periodically ask: are we optimizing for the insley-tier engineer (hardest possible standard) or the mcmaster-tier engineer (serious but achievable)? The tool serves both, but the default (`insley`) is brutal for most real-world sites. The champion should notice if the first-run experience consistently produces 8+ violations and ask whether that serves or alienates the adopting engineer — without compromising the hostile-defaults philosophy.
+
+- **The brand.md file is absent.** Goal.md instructs the champion to apply brand as a tint, but brand.md does not exist. The champion should fall back to stakeholder emotional signal rather than applying brand tint until brand.md is created (either by a future init pass or by the champion themselves once the project's voice is clearer from evidence).

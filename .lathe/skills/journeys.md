@@ -1,158 +1,112 @@
-# Stakeholder Journeys
+# Stakeholder Journeys — Gnomon
 
-Concrete first-encounter journeys the champion walks each cycle. Run these steps. Notice where you feel the emotional signal and where you don't.
-
----
-
-## Journey 1: Web Developer Evaluating Gnomon
-
-**Emotional signal to track:** Trust — does the output feel like a knowledgeable peer reviewed the site?
-
-**Steps:**
-
-1. Find the project. Read `PLAN.md` (there is no `README.md` — the plan doc serves this role for now). Note: does the framing land in 2 minutes or does it require reading the whole document?
-
-2. Install: `cargo install gnomon` (or download from GitHub Releases if binaries exist). Time it. If it takes more than 30 seconds, that's friction.
-
-3. Run against a real site you can audit without permission: `gnomon audit --url https://mcmaster.com`
-   - Does it complete without hanging?
-   - How long does it take?
-   - Does the output appear incrementally or all at once?
-
-4. Read the human output.
-   - Can you tell at a glance which budgets passed and which failed?
-   - For each violation, can you tell *what* fired and *why it matters*?
-   - Is there an ordering — worst violation first, or by category?
-   - If there are many violations, is the list navigable or overwhelming?
-
-5. Try a site you expect to pass (you may not find one — that's information). Or run with `--preset mcmaster` against a site you expect to be "okay."
-
-6. Look at the JSON output: `gnomon audit --url https://mcmaster.com --format json`
-   - Is it machine-readable and self-explanatory?
-   - Are the field names clear without reading the source?
-
-**Watch for:** The moment trust builds (a violation is so specific you immediately know what caused it) and the moment trust breaks (a violation is labeled but not explained, or you don't know what to do with the information).
+These are the concrete first-encounter journeys the champion walks each cycle. Each one ends with an emotional signal — the single feeling that tells you whether the moment was good, bad, or hollow.
 
 ---
 
-## Journey 2: CI/CD Pipeline Operator
+## Stakeholder 1: The web performance engineer
 
-**Emotional signal to track:** Confidence — the gate fires reliably and exits correctly.
+**Who.** A developer who has been burned by Lighthouse scores that don't stop regressions. They care deeply about page weight. They've seen a 90/100 Lighthouse score on a 2MB page. They are evaluating gnomon as a replacement for Lighthouse in their CI.
 
-**Steps:**
+**Emotional signal: momentum.** The moment after the first run, they should feel the urge to tell someone — "I found a tool that actually does what I want." Hollow is: a wall of output with no clear next action. Bad is: an error that tells them nothing.
 
-1. Look for CI integration docs. Search `PLAN.md` for "GitHub Actions" and "CI." Note: the plan describes a `gnomon-action` (v0.2 roadmap) and `gnomon ci` subcommand — neither is implemented yet.
+**First 10 minutes:**
+1. Find gnomon — probably via the README or the insley-web project.
+2. Install: `cargo install gnomon` or download a precompiled binary.
+   - *Watch for: install time, whether cargo is even installed, binary size.*
+3. Run against a real URL: `gnomon audit https://their-site.com`
+   - *Watch for: does it start quickly? Is there any progress indicator during the fetch?*
+4. Read the output: bytes table, counts table, violations list.
+   - *Watch for: are violations specific enough to act on? Do they explain why, or just that?*
+5. Try to understand a violation: "CSS 47 KiB / 14 KiB (zero budget) — 33 KiB over"
+   - *Watch for: which files contributed? Can they find the source of the bloat?*
+6. Run with JSON output: `gnomon audit https://their-site.com --format json`
+   - *Watch for: is the schema self-explanatory? Does it have what they'd need to build a dashboard?*
+7. Try `gnomon presets` to understand the two presets.
+   - *Watch for: are the presets legible? Do the budget numbers make sense?*
+8. Look for a way to add it to CI.
+   - *Watch for: `gnomon ci` command doesn't exist yet. No GitHub Action. They're on their own.*
 
-2. Try `gnomon ci` — note that it's not a recognized subcommand. What error message do you get?
-
-3. Try the fallback: `gnomon audit --url $URL` in a shell script. Does exit code 1 fire when violations exist?
-
-4. Try `gnomon audit --url $URL --format json`. Pipe to `jq .violations`. Is this usable in a CI script?
-
-5. Look for precompiled binaries on the GitHub Releases page. Are there binaries for common runner platforms (ubuntu-latest x86_64, macos arm64)?
-
-6. Draft a minimal GitHub Actions step in your head. What's the shortest path from "install gnomon" to "fail the build on violations"? How many lines of YAML?
-
-**Watch for:** Every extra step between "I want to add a perf gate" and "the gate is working in CI" is friction for this stakeholder. The moment confidence breaks is when they realize there's no prebuilt path and they have to improvise.
-
----
-
-## Journey 3: Contributor
-
-**Emotional signal to track:** Momentum — can you go from "I want to fix this" to "I have a working, tested PR" without hitting a wall?
-
-**Steps:**
-
-1. Clone the repo: `git clone https://github.com/libliflin/gnomon && cd gnomon`
-
-2. Build: `cargo build`
-   - Does it succeed?
-   - Any warnings during build?
-
-3. Run tests: `cargo test`
-   - How many tests exist?
-   - Are any of them meaningful (testing actual gnomon behavior)?
-   - Does `cargo test` output tell you what the project does?
-
-4. Run clippy: `cargo clippy -- -D warnings`
-   - Are there diagnostics? How many?
-   - Are they actionable?
-
-5. Find where to add a new check (e.g., "detect when `<img>` is missing `width` and `height` and add that to violations").
-   - `src/analyze.rs` — analysis already tracks `img_missing_dimensions`
-   - `src/audit.rs` — violations are assembled here
-   - Is the pattern obvious?
-
-6. Try adding a test for an existing behavior. What test infrastructure exists? (Answer: only `src/lib.rs` has a sanity test; there are no integration tests, no test fixtures, no test HTML documents.)
-
-**Watch for:** Momentum breaks at clippy errors, at the absence of meaningful tests, at unclear module boundaries. Momentum builds when making a change is obvious and adding a test is obvious.
+**What to try:**
+- Pick a real URL (or use example.com) and run `gnomon audit`.
+- Look at the violation output as if you'd never seen the PLAN.md. Is it obvious what to fix?
+- Look at the "contributor hints" in byte violations (top 2 files). Are they useful?
+- Try `gnomon audit https://example.com --format json | head -40`. Is the JSON navigable?
 
 ---
 
-## Journey 4: insley-web Author
+## Stakeholder 2: The CI integrator
 
-**Emotional signal to track:** Conviction — does using gnomon feel like the standard is real and enforced?
+**Who.** An engineer responsible for adding gnomon to their team's pipeline. They've been asked to enforce performance budgets in CI. They are not necessarily the person who chose gnomon — they may have been handed it. They care about: exit codes that mean something, zero false positives, a fast run time, and a way to get the output into their existing tooling (GitHub Annotations, Slack notifications, etc.).
 
-**Steps:**
+**Emotional signal: confidence.** After wiring gnomon in, they should feel "this gate is real — when it fails, it means something, and when it passes, I trust it." Hollow is: a gate that passes everything. Bad is: a gate that flakes or fails for reasons unrelated to the site's performance.
 
-1. Assume the insley-web site is built to `./dist`. Try: `gnomon audit --dir ./dist`
-   - This will fail — `--dir` is not implemented.
+**First 10 minutes:**
+1. Look for the CI integration docs.
+   - *Watch for: the README mentions `gnomon ci` and a GitHub Action (`libliflin/gnomon-action@v1`), but neither exists yet. The discrepancy between the README's promises and v0.0.2's reality is the most critical gap here.*
+2. Try `gnomon ci` — **this command doesn't exist.** The CLI has `audit`, `budget-init`, `presets`. No `ci` subcommand.
+   - *Watch for: the error message when an unknown subcommand is used.*
+3. Improvise: `gnomon audit https://their-site.com --format json; echo $?`
+   - *Watch for: does exit code 1 on failure work correctly? Exit code 2 for config errors?*
+4. Look for a Docker image or precompiled binary for their CI runner OS.
+   - *Watch for: `cargo install gnomon` in CI is 3-5 minutes. Is there a faster path?*
+5. Try to understand SARIF output (for GitHub code scanning) — **doesn't exist yet.**
+6. Try `gnomon audit --help` to see all available flags.
+   - *Watch for: `--format json` is there. `--sarif` is not. `--fail-on=new` is not.*
 
-2. Workaround: Spin up a local server, e.g., `python3 -m http.server 8080 --directory ./dist` and run `gnomon audit --url http://localhost:8080`.
-
-3. Check that the audit produces meaningful results:
-   - Are violations real or are they artifacts of the localhost setup?
-   - Does the HTML byte budget make sense for a site built to the insley standard?
-
-4. After a perf win (e.g., reduced a CSS file), try `gnomon budget tighten` to lock in the win.
-   - This will fail — `budget tighten` is not implemented.
-
-5. Check the budget file format. Try `gnomon budget-init --preset insley` to generate a starter `gnomon.toml`.
-   - Does it generate a valid TOML that `gnomon audit` will accept via `--config`?
-
-6. Check that per-route overrides in `gnomon.toml` work (they don't yet — per-route config is not parsed).
-
-**Watch for:** Every missing feature is a workaround. Conviction breaks when the path from "I built the site" to "I know if it meets the standard" requires more than two commands.
+**What to try:**
+- Run `gnomon audit https://example.com` and check `echo $?` for exit code.
+- Verify exit code 1 on a URL that will fail (try a bloated real-world site).
+- Run `gnomon audit --help` and read every flag as if you were looking for what you need.
+- Note every moment where the README describes a feature that doesn't exist in the binary.
 
 ---
 
-## Journey 5: Library Consumer
+## Stakeholder 3: The team technical lead / budget owner
 
-**Emotional signal to track:** Predictability — you don't have to think about gnomon.
+**Who.** The engineer who owns the `gnomon.toml` and is accountable for the performance standard. They explain violations to teammates. They decide when to loosen a budget and write the justification. They want to trust the tool completely — when gnomon says fail, they need to be able to defend it.
 
-**Steps:**
+**Emotional signal: authority.** When gnomon fails a build, they should be able to say "here's why, here's the rule, here's the path to fix it" without having to read PLAN.md to their team. The violation message should carry enough weight on its own. Hollow is: a violation that says "over budget" without telling the team what pushed it over.
 
-1. In a new Rust project: `cargo add gnomon`
+**First 10 minutes:**
+1. Look at `gnomon presets` output to understand the numbers.
+2. Run `gnomon budget-init --preset mcmaster` to generate a starter config.
+   - *Watch for: does the generated file include comments explaining each budget? Does it teach or just configure?*
+3. Read the generated `gnomon.toml`. Try to explain it to a hypothetical teammate.
+4. Run `gnomon audit` against a real URL with the config. Read a failing violation message aloud.
+   - *Watch for: does the message include enough context for a code review comment? "CSS 47 KiB over budget — main.css (38 KiB), vendor.css (9 KiB)" is good. "css: 47 KiB / 14 KiB" is not enough.*
+5. Look for `gnomon budget explain <violation-id>` — **doesn't exist yet.**
+6. Try to understand the justification system from `gnomon.toml` comments.
+   - *Watch for: is the justification format documented in the generated file?*
 
-2. Add to `Cargo.toml`:
-   ```toml
-   [dependencies]
-   gnomon = "0.0.2"
-   tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-   ```
+**What to try:**
+- Run `gnomon budget-init` and read the output file carefully.
+- Run `gnomon presets` and check if the numbers are self-explanatory.
+- Construct a violation message as a teammate would read it. Is it actionable?
 
-3. Write a minimal usage:
-   ```rust
-   use gnomon::{audit_url, Budget, Preset};
-   
-   #[tokio::main]
-   async fn main() {
-       let budget = Budget::from_preset(gnomon::budget::PresetName::Insley);
-       let report = audit_url("https://example.com", &budget).await.unwrap();
-       for v in &report.violations {
-           println!("{}: {}", v.metric, v.detail);
-       }
-   }
-   ```
+---
 
-4. Does it compile? Are the imports clear from the `pub use` exports in `lib.rs`?
-   - `audit_url` is exported
-   - `Budget` is exported
-   - `Preset` is exported — but `Budget::from_preset` needs `PresetName` which is in `gnomon::budget`
-   - Note: `PresetName` is not re-exported from the top level — must be accessed as `gnomon::budget::PresetName`
+## Stakeholder 4: The contributor
 
-5. Run against a real URL. Does it produce a meaningful `AuditReport`?
+**Who.** A Rust developer who wants to add a check to gnomon — maybe a new anti-theater rule, a new forbidden domain, or a new violation type. They evaluate the project in the first 10 minutes and decide whether it's worth their time.
 
-6. Pattern-match on `ViolationKind`. Is the enum self-documenting?
+**Emotional signal: clarity.** After reading the code, they should know exactly where to put their new rule and how to test it. Hollow is: understanding the structure but having no tests to validate their change. Bad is: a codebase that fails its own quality gates (clippy errors, broken build).
 
-**Watch for:** Any time the consumer has to read gnomon's source to understand how to use it is a predictability failure. The moment trust builds is when `AuditReport` gives you everything you need without needing internal types.
+**First 10 minutes:**
+1. Clone the repo.
+2. `cargo build` — does it build clean?
+3. `cargo clippy -- -D warnings` — does it pass clean? (It does as of cycle 1 fix.)
+4. `cargo test` — does it pass? (Technically yes, but there's only a sanity stub.)
+5. Read `src/analyze.rs` to understand where a new HTML check would go.
+   - *Watch for: is it clear how to add a new `HtmlAnalysis` field? Is the `analyze_html` function navigable?*
+6. Read `src/audit.rs` to see where violations are assembled.
+   - *Watch for: the violation assembly is at the bottom of `audit_url`. Is it clear how to add a new violation check?*
+7. Look for a test to copy as a starting point for their new check — **none exist.**
+8. Look for a `CONTRIBUTING.md` — **doesn't exist.**
+9. Try to add a trivial new forbidden domain and verify it fires.
+
+**What to try:**
+- Open `src/analyze.rs` and trace through what happens to a `<script loading="lazy">` tag.
+- Open `src/forbidden.rs` and try to understand how to add a new entry.
+- Run `cargo test` and note the hollow green result.
+- Imagine adding a new check: where would you put it? How would you test it?

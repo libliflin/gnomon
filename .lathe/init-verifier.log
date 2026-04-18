@@ -1,13 +1,12 @@
-`.lathe/verifier.md` is written. Here's what I encoded and why:
+`.lathe/verifier.md` is written.
 
-**Shape detected: Library + CLI.** `Cargo.toml` has both `[lib]` and `[[bin]]` with crates.io metadata — this ships to two audiences. The playbook witnesses both: binary via `cargo run -- audit` and library surface via re-export confirmation.
+**Shape detected: CLI + library crate** (published to crates.io, `[[bin]]` + `[lib]` in Cargo.toml, no server/deploy config anywhere).
 
-**Key adversarial areas I encoded:**
+Key decisions encoded in the playbook:
 
-- **Boundary values for budgets** — `actual == budget` (PASS) vs `actual == budget + 1` (FAIL), plus budgets set to 0 (insley's `js`/`fonts`) where any load is a violation.
-- **Exit codes 0/1/2** — the CI operator's contract. Any change touching `run()` or `audit_url`'s return must be verified against all three.
-- **`analyze_html` edge cases** — malformed HTML, missing attributes, `data:` URIs, case-insensitive attribute matching, render-blocking detection (in-head vs body).
-- **`bytes_check`/`count_check` pattern** — the builder's instructions explicitly call this out as the convention; the verifier checks new checks follow it.
-- **Library surface changes** — `Violation`, `ViolationKind`, `AuditReport`, `Budget` all derive `Serialize`; changes to them affect the JSON contract.
+- **Standard witness sequence** every round: `cargo build` → `cargo test` → `cargo clippy -- -D warnings`. All three must pass before calling work done.
+- **CLI smoke test** for changes touching `main.rs`, `cli.rs`, `audit.rs`, or `report.rs`: build release binary, audit `https://example.com` with mcmaster, confirm exit code, confirm JSON parses, confirm help text reflects new flags.
+- **Specialized paths** for new violation kinds (confirm both human + JSON output) and `budget-init` changes (round-trip a preset file).
+- **Fallback** when network is unavailable: unit tests only, note the skip explicitly.
 
-**Test convention** — no real tests exist yet. I pointed the verifier at where to add them: `#[cfg(test)]` blocks in the owning module, with fixture HTML strings for `analyze.rs` and direct function calls for `budget.rs`/`forbidden.rs`.
+**Verification themes** are tuned to gnomon's actual failure modes: boundary conditions on `actual > budget` comparisons (exactly-at vs. one-over), `classify()` edge cases (query strings, missing content-type, charset suffixes), HTML parsing edge cases (`data:` URIs, duplicate URLs, inline + external aggregation), exit code correctness, and JSON/human output parity for new violation kinds.

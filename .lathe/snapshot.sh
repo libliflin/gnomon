@@ -1,70 +1,90 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# macOS-safe timeout
-if command -v gtimeout &>/dev/null; then
-  TO=gtimeout
-elif command -v timeout &>/dev/null; then
-  TO=timeout
-else
-  TO=""
-fi
-run() { ${TO:+$TO 60} "$@"; }
+# macOS-compatible timeout: use gtimeout if available, else timeout, else plain exec
+_timeout() {
+  if command -v gtimeout &>/dev/null; then
+    gtimeout "$@"
+  elif command -v timeout &>/dev/null; then
+    timeout "$@"
+  else
+    shift; "$@"
+  fi
+}
 
 echo "# Project Snapshot"
-echo "Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo
 
-# ── Git status ──────────────────────────────────────────────────────────────
+# ── Git status ────────────────────────────────────────────────────────────────
 echo "## Git Status"
 git status --short || true
 echo
 
-# ── Recent commits ───────────────────────────────────────────────────────────
+# ── Recent commits ────────────────────────────────────────────────────────────
 echo "## Recent Commits"
-git log --oneline -10 || true
+git log --oneline -10
 echo
 
-# ── Build ────────────────────────────────────────────────────────────────────
+# ── Build ─────────────────────────────────────────────────────────────────────
 echo "## Build"
-BUILD_OK=true; BUILD_OUT=$(run cargo build 2>&1) || BUILD_OK=false
+BUILD_OUT=$(_timeout 120 cargo build 2>&1) && BUILD_OK=true || BUILD_OK=false
 if $BUILD_OK; then
   echo "OK — builds clean"
 else
-  echo "FAIL"
-  echo "$BUILD_OUT" | { grep -E "^error" || true; } | head -10
+  echo "FAILED"
+  echo '```'
+  echo "$BUILD_OUT" | grep -E "^error" | head -10
+  echo '```'
 fi
 echo
 
-# ── Tests ────────────────────────────────────────────────────────────────────
+# ── Tests ─────────────────────────────────────────────────────────────────────
 echo "## Tests"
-TEST_OK=true; TEST_OUT=$(run cargo test --lib --bins 2>&1) || TEST_OK=false
-PASS=$(echo "$TEST_OUT" | { grep -oE "test .* \.\.\. ok" || true; } | wc -l | tr -d ' ')
-FAIL=$(echo "$TEST_OUT" | { grep -oE "test .* \.\.\. FAILED" || true; } | wc -l | tr -d ' ')
-IGNORED=$(echo "$TEST_OUT" | { grep -oE "test .* \.\.\. ignored" || true; } | wc -l | tr -d ' ')
+TEST_OUT=$(_timeout 120 cargo test 2>&1) || true
+
+# Sum counts across all test suites (unit + doc + integration)
+_sum_field() {
+  echo "$TEST_OUT" | grep -E "^test result:" \
+    | sed -E "s/.*([0-9]+) $1.*/\1/" \
+    | awk '{s+=$1} END {print s+0}'
+}
+PASS=$(_sum_field "passed")
+FAIL=$(_sum_field "failed")
+IGNORED=$(_sum_field "ignored")
+
 echo "Pass: $PASS | Fail: $FAIL | Ignored: $IGNORED"
-if ! $TEST_OK; then
-  echo "$TEST_OUT" | { grep -A 5 "FAILED\|^error" || true; } | head -20
+
+if [[ "$FAIL" != "0" && "$FAIL" != "" ]]; then
+  echo
+  echo "Failures:"
+  echo '```'
+  echo "$TEST_OUT" | grep -E "^(FAILED|failures:|---- )" | head -20
+  echo '```'
 fi
 echo
 
-# ── Clippy (lint) ────────────────────────────────────────────────────────────
+# ── Clippy (lint) ─────────────────────────────────────────────────────────────
 echo "## Clippy"
-CLIPPY_OK=true; CLIPPY_OUT=$(run cargo clippy -- -D warnings 2>&1) || CLIPPY_OK=false
-if $CLIPPY_OK; then
-  echo "OK"
+CLIPPY_OUT=$(_timeout 120 cargo clippy --all-targets --message-format=short 2>&1) && CLIPPY_OK=true || CLIPPY_OK=false
+WARN_COUNT=$(echo "$CLIPPY_OUT" | grep -c "^warning" || true)
+ERROR_COUNT=$(echo "$CLIPPY_OUT" | grep -c "^error" || true)
+
+if $CLIPPY_OK && [[ "$ERROR_COUNT" -eq 0 ]]; then
+  echo "OK — ${WARN_COUNT} warning(s)"
 else
-  WARN_COUNT=$(echo "$CLIPPY_OUT" | { grep -c "^error\|^warning" || true; })
-  echo "FAIL — $WARN_COUNT diagnostics"
-  echo "$CLIPPY_OUT" | { grep "^error" || true; } | head -8
+  echo "FAILED — ${ERROR_COUNT} error(s), ${WARN_COUNT} warning(s)"
+  echo '```'
+  echo "$CLIPPY_OUT" | grep -E "^(error|warning)" | head -10
+  echo '```'
 fi
 echo
 
-# ── CI ───────────────────────────────────────────────────────────────────────
+# ── CI ────────────────────────────────────────────────────────────────────────
 echo "## CI"
 CI_FILES=$(find .github/workflows -name "*.yml" -o -name "*.yaml" 2>/dev/null | sort || true)
-if [ -n "$CI_FILES" ]; then
+if [[ -n "$CI_FILES" ]]; then
   echo "$CI_FILES"
 else
-  echo "No CI config found (.github/workflows missing)"
+  echo "No CI config found (.github/workflows)"
 fi

@@ -1,12 +1,14 @@
-`.lathe/brand.md` is written. Here's what the evidence produced:
+`.lathe/brand.md` is written. Here's what it found and why the claims land:
 
-**Identity read:** Blunt authority that defines itself by refusal. The clearest signal in the repo isn't what gnomon does — it's the sustained list of things it won't do or add. That's rare enough to be brand, not just design.
+**Identity:** Precise, clinical, unapologetic — grounded in the `--help` about text ("A CI gate, not a dashboard"), the PLAN.md self-descriptions ("unapologetically opinionated," "hostile defaults"), and the fact that the tool audits its own build time.
 
-**Five edge-case examples anchored to real strings:**
-- "No" → literal PLAN.md text about `--warn-only`
-- Failure → `"14.7 KiB over"` format + `gnomon:` prefix pattern in main.rs
-- Explanation → the forbidden list's `"domain — reason (next step)"` rhythm in forbidden.rs
-- Onboarding → the identical two-sentence description in Cargo.toml and cli.rs
-- Celebration → `"all budgets met".dimmed()` in report.rs — quiet by design
+**Five edge-case anchors:**
+- **When we say no:** "Does not exist. Will not be added. A PR proposing it will be closed." — verbatim from PLAN.md §6
+- **When we fail:** `"33 KiB over — main.css (28 KiB), vendor.css (5 KiB)"` — the violation format from `src/audit.rs:203–225`
+- **When we name a bad practice:** `"likely LCP gaming"` — from `src/audit.rs:301`, the word "gaming" not "pattern"
+- **When we onboard:** One sentence + binary distinction from `src/cli.rs:11`
+- **When we pass:** `PASS  all budgets met` — single line, dimmed, quieter than failure
 
-**The thing it'd never do:** Introduce a warning tier. That's the specific texture the project explicitly rejects, and it's load-bearing — every other stance follows from it.
+**The thing we'd never do:** Introduce a yellow/warning state — cited directly from PLAN.md §16 "There is no yellow state."
+
+**Three signals to preserve:** ALL-CAPS verdict words, the em-dash rhythm in violation details, and categorical negation in refusals ("Does not exist. Will not be added.").

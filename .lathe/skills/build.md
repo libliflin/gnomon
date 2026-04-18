@@ -1,67 +1,44 @@
-# Build
+# Build — Gnomon
 
-## Development build
-
-```sh
-cargo build          # debug build, fast compile
-cargo build --release   # optimized binary (LTO fat, strip, O3, panic=abort)
-```
-
-Release profile is aggressive — intended for distribution:
-```toml
-[profile.release]
-lto = "fat"
-codegen-units = 1
-strip = true
-opt-level = 3
-panic = "abort"
-```
-
-## Lint
+## Standard commands
 
 ```sh
-cargo clippy -- -D warnings    # warnings are errors; must be clean before committing
+cargo build                    # debug build
+cargo build --release          # release build (LTO, stripped, opt-level=3)
+cargo test                     # run all tests
+cargo clippy --all-targets     # lint (treat as blocking)
+cargo clippy -- -D warnings    # lint with warnings-as-errors (the standard)
 ```
 
-As of v0.0.2, clippy reports ~9 diagnostics (per init-snapshot.log). These must be fixed — the project's own standard demands a clean build.
+## Release profile
 
-## Format
+`Cargo.toml` configures an aggressive release profile:
+- `lto = "fat"` — link-time optimization across all crates
+- `codegen-units = 1` — maximum optimization, slower compile
+- `strip = true` — strips debug symbols from the binary
+- `opt-level = 3`
+- `panic = "abort"` — no unwinding
 
-```sh
-cargo fmt              # format; CI should enforce
-cargo fmt -- --check   # fail if not formatted
-```
+This means `cargo build --release` is slow (tens of seconds). Use debug builds during development.
+
+## No CI yet
+
+There are no `.github/workflows/` files. CI is not configured. This means:
+- No automated build checks on PRs
+- No automated test runs
+- No clippy enforcement
+- No binary size checks
+
+The snapshot.sh checks `cargo build`, `cargo test`, and `cargo clippy` locally, which substitutes for CI during lathe cycles.
 
 ## Feature flags
 
-None currently. The `gnomon-measure` crate (headless browser) is planned as a feature-gated dependency (`features = ["measure"]`) — not yet implemented.
+`gnomon-measure` (headless Chromium) will be feature-gated but is not implemented yet. No feature flags currently affect the build.
 
-## Key dependencies (and why)
+## Optional allocator
 
-- `clap 4` + derive — CLI argument parsing
-- `tokio` multi-thread — async runtime for URL fetching
-- `reqwest 0.12` + rustls-tls — HTTP client (no OpenSSL dependency)
-- `scraper 0.20` — HTML parsing via CSS selectors
-- `url 2` — URL parsing and resolution
-- `serde` + `serde_json` + `toml 0.8` — serialization and config parsing
-- `thiserror` + `anyhow` — error types
-- `owo-colors 4` — terminal color output (no unsafe, no runtime detect needed)
-- `brotli 7` + `flate2` — transfer size recomputation
-- `futures 0.3` — stream processing for concurrent fetches
-- `humansize 2` — human-readable byte sizes in output
-- `aho-corasick 1` — forbidden list pattern matching
+A `mimalloc` feature is mentioned in PLAN.md for deployments that care about microsecond-level allocator performance, but it is not in `Cargo.toml` yet.
 
-## Binary targets
+## Binary output
 
-Two targets in Cargo.toml:
-- `lib` at `src/lib.rs` — the public API
-- `bin` "gnomon" at `src/main.rs` — the CLI
-
-Both are built with `cargo build`.
-
-## Planned but not present
-
-- Benchmark suite (`cargo bench`) — PLAN.md §13 describes timing gates for cold start, per-page audit, 100-page crawl
-- Precompiled binary distribution (GitHub Releases) — not yet set up
-- GitHub Actions for CI — not configured
-- `gnomon-action` GitHub Action — v0.2 roadmap
+The built binary is at `target/release/gnomon`. It is a single static binary with no runtime dependencies (Rust + musl for Linux targets).

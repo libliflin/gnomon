@@ -1,13 +1,12 @@
-`.lathe/builder.md` is written.
+Written to `.lathe/builder.md`.
 
-It encodes:
+The file encodes the durable conventions the builder needs across 50 cycles:
 
-- **Identity** — receives a goal with a stakeholder, implements one change landed clean
-- **Goal-setter alignment** — reads the stakeholder framing, understands the journey moment, uses that to weigh tradeoffs
-- **Project conventions** — exact module map, how to add a new check end-to-end, error handling patterns, async contract, serialization rules, dependency discipline
-- **General problem solving** — types over runtime checks, `ViolationKind` discipline, the violation pipeline pattern
-- **Witnessability** — concrete verifier pointers: commands, URLs, imports, output lines
-- **Voice** — direct/declarative, matches the `gnomon:` error prefix and violation detail style already in the code
-- **CI/CD model** — CI-first priority, engine merges, no-CI-configured callout, slow CI as a first-class problem
-- **Changelog format** — with a `Spotted` section for adjacent work
-- **Rules** — clippy clean, tests preserved, one change, no unbidden stdout from library code
+- **Identity and posture** — creative synthesis, structural solutions, fewest moving parts
+- **The dialog model** — round 1 always contributes, round 2+ is judgment-driven, convergence ends the cycle naturally
+- **Module map** — where each `src/*.rs` file lives in the conceptual model, the standard path for adding a violation type or CLI subcommand
+- **Testing conventions** — co-located unit tests, synthetic inputs (no live URLs), the unhappy-path bar for new checks
+- **Brand signals** — em-dash as separator, `PASS`/`FAIL` in caps, categorical negation in refusals — all grounded in the actual source code
+- **Changelog format** — matches the goal-setter's stakeholder framing (Who This Helps mirrors how the goal-setter thinks)
+
+Current-state observations (thin test surface, no CI config) are intentionally left out — those belong in the snapshot, not here.
