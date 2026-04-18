@@ -23,6 +23,7 @@ pub struct HtmlAnalysis {
 
     pub preload_hint_count: u32,
     pub preconnect_targets: Vec<String>,
+    pub preload_font_no_crossorigin: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -132,12 +133,17 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
         } else if rel.contains("preload") {
             a.preload_hint_count += 1;
             match as_attr.as_str() {
-                "font" => a.font_urls.push(ResourceRef {
-                    url: resolved,
-                    render_blocking: false,
-                    is_lcp_candidate: false,
-                    is_lazy: false,
-                }),
+                "font" => {
+                    if el.value().attr("crossorigin").is_none() {
+                        a.preload_font_no_crossorigin += 1;
+                    }
+                    a.font_urls.push(ResourceRef {
+                        url: resolved,
+                        render_blocking: false,
+                        is_lcp_candidate: false,
+                        is_lazy: false,
+                    });
+                }
                 "image" => a.image_urls.push(ResourceRef {
                     url: resolved,
                     render_blocking: false,
@@ -944,6 +950,70 @@ mod tests {
         </body></html>"#;
         let a = analyze(html);
         assert_eq!(a.picture_missing_modern_source, 0);
+    }
+
+    // ── preload_font_no_crossorigin ───────────────────────────────────────────
+
+    #[test]
+    fn font_preload_without_crossorigin_is_counted() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_font_no_crossorigin, 1);
+    }
+
+    #[test]
+    fn font_preload_with_crossorigin_is_not_counted() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2" crossorigin>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_font_no_crossorigin, 0);
+    }
+
+    #[test]
+    fn font_preload_with_crossorigin_anonymous_is_not_counted() {
+        // crossorigin="anonymous" is the correct value — must not trigger the check.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2" crossorigin="anonymous">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_font_no_crossorigin, 0);
+    }
+
+    #[test]
+    fn multiple_font_preloads_some_missing_crossorigin_counted_correctly() {
+        // Two font preloads: one correct, one missing crossorigin — only count the bad one.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2" crossorigin>
+            <link rel="preload" as="font" href="/sans.woff2">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_font_no_crossorigin, 1);
+    }
+
+    #[test]
+    fn non_font_preloads_without_crossorigin_not_counted() {
+        // Only font preloads need crossorigin — image/script/style preloads must not count.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="image" href="/hero.avif">
+            <link rel="preload" as="script" href="/app.js">
+            <link rel="preload" as="style" href="/critical.css">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_font_no_crossorigin, 0);
+    }
+
+    #[test]
+    fn font_preload_no_crossorigin_does_not_affect_font_urls() {
+        // Whether crossorigin is missing or present, the font URL must still be recorded.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.font_urls.len(), 1);
+        assert_eq!(a.font_urls[0].url, "https://example.com/serif.woff2");
     }
 
     // ── meta tags ─────────────────────────────────────────────────────────────
