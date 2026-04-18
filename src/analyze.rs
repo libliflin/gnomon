@@ -494,6 +494,40 @@ mod tests {
         assert!(a.image_urls.is_empty(), "data: URI must not be added to image_urls");
     }
 
+    // ── resolve() edge cases ──────────────────────────────────────────────────
+
+    #[test]
+    fn relative_script_url_resolves_against_base() {
+        // /app.js relative to https://example.com/ must resolve to the full URL.
+        let html = r#"<!doctype html><html><head>
+            <script src="/app.js"></script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.script_urls.len(), 1);
+        assert_eq!(a.script_urls[0].url, "https://example.com/app.js");
+    }
+
+    #[test]
+    fn protocol_relative_url_is_resolved() {
+        // //cdn.example.com/lib.js must be treated as https: (inheriting the base scheme).
+        let html = r#"<!doctype html><html><head>
+            <script src="//cdn.example.com/lib.js"></script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.script_urls.len(), 1);
+        assert_eq!(a.script_urls[0].url, "https://cdn.example.com/lib.js");
+    }
+
+    #[test]
+    fn javascript_uri_in_script_src_is_filtered() {
+        // javascript: URIs must be silently dropped — they are not real resource loads.
+        let html = r#"<!doctype html><html><head>
+            <script src="javascript:void(0)"></script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(a.script_urls.is_empty(), "javascript: URI must not produce a script_url entry");
+    }
+
     // ── classify ─────────────────────────────────────────────────────────────
 
     #[test]
