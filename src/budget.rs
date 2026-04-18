@@ -930,6 +930,39 @@ mod tests {
     }
 
     #[test]
+    fn resolve_budget_with_valid_allowlist_loosens_budget_end_to_end() {
+        // Full wiring test: write a gnomon.toml with a valid [[allowlist]] entry,
+        // call resolve_budget, confirm the returned budget reflects the loosened value.
+        // This is the happy path that the expired-entry test cannot cover.
+        let _lock = CWD_LOCK.lock().unwrap();
+        let _cwd = CwdGuard::new();
+
+        let toml_str = format!(
+            "{}\n\
+             [[allowlist]]\n\
+             metric        = \"third_party_domains\"\n\
+             budget        = 7\n\
+             justification = \"Analytics vendor — PERF-42 — replace by 2099-01-01\"\n\
+             expires       = \"2099-01-01\"\n",
+            preset_toml(PresetName::Mcmaster)
+        );
+        let tmp = std::env::temp_dir().join("gnomon_test_valid_allowlist_e2e");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("gnomon.toml"), &toml_str).unwrap();
+
+        std::env::set_current_dir(&tmp).unwrap();
+        let budget = resolve_budget(PresetName::Insley, None)
+            .expect("valid allowlist must not error");
+        // preset loaded from file is mcmaster (third_party_domains default = 2)
+        // allowlist entry raises it to 7
+        assert_eq!(
+            budget.preset.count.third_party_domains, 7,
+            "allowlist must loosen third_party_domains to 7, got {}",
+            budget.preset.count.third_party_domains
+        );
+    }
+
+    #[test]
     fn gnomon_toml_with_expired_allowlist_fails_resolve_budget() {
         let _lock = CWD_LOCK.lock().unwrap();
         let _cwd = CwdGuard::new();
