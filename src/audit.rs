@@ -526,7 +526,7 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
             metric: "viewport_meta",
             budget: 0,
             actual: 1,
-            detail: "missing <meta name=\"viewport\">".into(),
+            detail: "missing <meta name=\"viewport\"> — renders at desktop width on mobile, degrading LCP".into(),
         });
     }
     if analysis.img_missing_dimensions > 0 {
@@ -1225,10 +1225,9 @@ mod tests {
         assert_eq!(vios.len(), 1);
         assert_eq!(vios[0].metric, "viewport_meta");
         assert_eq!(vios[0].kind, ViolationKind::Theater);
-        assert!(
-            vios[0].detail.contains("viewport"),
-            "detail should mention viewport, got: {}",
-            vios[0].detail
+        assert_eq!(
+            vios[0].detail,
+            "missing <meta name=\"viewport\"> — renders at desktop width on mobile, degrading LCP"
         );
     }
 
@@ -1272,10 +1271,9 @@ mod tests {
         assert_eq!(vios[0].metric, "img_dimensions");
         assert_eq!(vios[0].kind, ViolationKind::Theater);
         assert_eq!(vios[0].actual, 3);
-        assert!(
-            vios[0].detail.contains("layout shift"),
-            "detail must mention layout shift: {}",
-            vios[0].detail
+        assert_eq!(
+            vios[0].detail,
+            "3 <img> element(s) missing explicit width/height — layout shift (CLS)"
         );
     }
 
@@ -1318,10 +1316,9 @@ mod tests {
         assert_eq!(charset_vios.len(), 1);
         assert_eq!(charset_vios[0].kind, ViolationKind::Theater);
         assert_eq!(charset_vios[0].actual, 1);
-        assert!(
-            charset_vios[0].detail.contains("encoding sniff"),
-            "detail must mention encoding sniff: {}",
-            charset_vios[0].detail
+        assert_eq!(
+            charset_vios[0].detail,
+            "missing <meta charset> or http-equiv Content-Type — forces encoding sniff"
         );
     }
 
