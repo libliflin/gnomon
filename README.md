@@ -10,16 +10,31 @@ See [PLAN.md](PLAN.md) for the full design and philosophy.
 
 ## Install
 
+**Linux:**
 ```sh
-# Fast — pre-built binary (~5 seconds):
 curl -fsSL https://github.com/libliflin/gnomon/releases/latest/download/gnomon-x86_64-unknown-linux-musl.tar.gz | tar xz
-# macOS Intel: .../gnomon-x86_64-apple-darwin.tar.gz
-# macOS Apple Silicon: .../gnomon-aarch64-apple-darwin.tar.gz
+sudo mv gnomon /usr/local/bin/
+```
 
-# With cargo-binstall:
+**macOS (Apple Silicon):**
+```sh
+curl -fsSL https://github.com/libliflin/gnomon/releases/latest/download/gnomon-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv gnomon /usr/local/bin/
+```
+
+**macOS (Intel):**
+```sh
+curl -fsSL https://github.com/libliflin/gnomon/releases/latest/download/gnomon-x86_64-apple-darwin.tar.gz | tar xz
+sudo mv gnomon /usr/local/bin/
+```
+
+**With cargo-binstall:**
+```sh
 cargo binstall gnomon
+```
 
-# Build from source:
+**Build from source:**
+```sh
 cargo install gnomon
 ```
 
