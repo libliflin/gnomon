@@ -40,5 +40,4 @@ The detail function pattern: takes `actual`, `budget`, and a contributor slice; 
 
 ## Good first issues
 
-**`has_charset_meta` is a known gap.**
-`HtmlAnalysis.has_charset_meta` is detected in `analyze_html` (tests: `charset_meta_via_charset_attr_is_detected`, `charset_meta_via_http_equiv_is_detected` in `src/analyze.rs`) and serialized to JSON, but `theater_violations` has no branch for it. PLAN.md §7.1 lists "missing charset in first 1024 bytes" as an anti-theater rule. The contribution is one branch and two tests — follow the `img_missing_dimensions` pattern exactly.
+No known gaps at this time. To find one: scan `HtmlAnalysis` fields in `src/analyze.rs` for fields that are detected and serialized to JSON but have no corresponding branch in `theater_violations` in `src/audit.rs`. Each such field is a candidate anti-theater rule waiting to be wired.

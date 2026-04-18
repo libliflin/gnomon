@@ -518,6 +518,16 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
             ),
         });
     }
+    if !analysis.has_charset_meta {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "charset_meta",
+            budget: 0,
+            actual: 1,
+            detail: "missing <meta charset> or http-equiv Content-Type — forces encoding sniff"
+                .into(),
+        });
+    }
     vios
 }
 
@@ -1021,6 +1031,7 @@ mod tests {
         let analysis = HtmlAnalysis {
             lazy_lcp_candidate: true,
             has_viewport_meta: true, // clean — only lazy_lcp should fire
+            has_charset_meta: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
@@ -1039,6 +1050,7 @@ mod tests {
         let analysis = HtmlAnalysis {
             lazy_lcp_candidate: false,
             has_viewport_meta: false, // missing viewport — should fire
+            has_charset_meta: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
@@ -1057,6 +1069,7 @@ mod tests {
         let analysis = HtmlAnalysis {
             lazy_lcp_candidate: false,
             has_viewport_meta: true,
+            has_charset_meta: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
@@ -1068,6 +1081,7 @@ mod tests {
         let analysis = HtmlAnalysis {
             lazy_lcp_candidate: true,
             has_viewport_meta: false,
+            has_charset_meta: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
@@ -1082,6 +1096,7 @@ mod tests {
         let analysis = HtmlAnalysis {
             img_missing_dimensions: 3,
             has_viewport_meta: true,
+            has_charset_meta: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
@@ -1101,6 +1116,7 @@ mod tests {
         let analysis = HtmlAnalysis {
             img_missing_dimensions: 0,
             has_viewport_meta: true,
+            has_charset_meta: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
@@ -1113,11 +1129,46 @@ mod tests {
         let analysis = HtmlAnalysis {
             img_missing_dimensions: 1,
             has_viewport_meta: true,
+            has_charset_meta: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
         assert_eq!(vios.len(), 1);
         assert_eq!(vios[0].metric, "img_dimensions");
         assert_eq!(vios[0].actual, 1);
+    }
+
+    #[test]
+    fn theater_violations_missing_charset_meta_fires() {
+        let analysis = HtmlAnalysis {
+            has_charset_meta: false,
+            has_viewport_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        let charset_vios: Vec<_> = vios.iter().filter(|v| v.metric == "charset_meta").collect();
+        assert_eq!(charset_vios.len(), 1);
+        assert_eq!(charset_vios[0].kind, ViolationKind::Theater);
+        assert_eq!(charset_vios[0].actual, 1);
+        assert!(
+            charset_vios[0].detail.contains("encoding sniff"),
+            "detail must mention encoding sniff: {}",
+            charset_vios[0].detail
+        );
+    }
+
+    #[test]
+    fn theater_violations_present_charset_meta_no_violation() {
+        let analysis = HtmlAnalysis {
+            has_charset_meta: true,
+            has_viewport_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        let charset_vios: Vec<_> = vios.iter().filter(|v| v.metric == "charset_meta").collect();
+        assert!(
+            charset_vios.is_empty(),
+            "present charset meta must produce no violation"
+        );
     }
 }
