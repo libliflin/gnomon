@@ -574,4 +574,82 @@ mod tests {
         // Content-type takes priority over extension when both are present.
         assert_eq!(classify("/file.js", Some("text/css")), AssetKind::Css);
     }
+
+    // ── stylesheet in body / print media ─────────────────────────────────────
+
+    #[test]
+    fn stylesheet_in_body_is_not_render_blocking() {
+        let html = r#"<!doctype html><html><head></head><body>
+            <link rel="stylesheet" href="/late.css">
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+        assert_eq!(a.stylesheet_urls.len(), 1);
+        assert!(!a.stylesheet_urls[0].render_blocking);
+    }
+
+    #[test]
+    fn print_media_stylesheet_is_not_render_blocking() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="stylesheet" href="/print.css" media="print">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+        assert!(!a.stylesheet_urls[0].render_blocking);
+    }
+
+    // ── inline + external aggregation ────────────────────────────────────────
+
+    #[test]
+    fn inline_and_external_styles_are_independent() {
+        // inline_style_bytes counts <style> content; stylesheet_urls tracks <link>.
+        // They must not interfere — both present on a page co-exist cleanly.
+        let css = "body { color: red; }";
+        let html = format!(
+            r#"<!doctype html><html><head>
+                <style>{css}</style>
+                <link rel="stylesheet" href="/main.css">
+            </head><body></body></html>"#
+        );
+        let a = analyze(&html);
+        assert_eq!(a.inline_style_bytes, css.len() as u64);
+        assert_eq!(a.stylesheet_urls.len(), 1);
+        assert_eq!(a.stylesheet_urls[0].url, "https://example.com/main.css");
+    }
+
+    // ── meta tags ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn viewport_meta_is_detected() {
+        let html = r#"<!doctype html><html><head>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(a.has_viewport_meta);
+    }
+
+    #[test]
+    fn missing_viewport_meta_is_false() {
+        let html = r#"<!doctype html><html><head></head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(!a.has_viewport_meta);
+    }
+
+    #[test]
+    fn charset_meta_via_charset_attr_is_detected() {
+        let html = r#"<!doctype html><html><head>
+            <meta charset="utf-8">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(a.has_charset_meta);
+    }
+
+    #[test]
+    fn charset_meta_via_http_equiv_is_detected() {
+        let html = r#"<!doctype html><html><head>
+            <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(a.has_charset_meta);
+    }
 }
