@@ -37,6 +37,7 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             match args.format {
                 OutputFormat::Human => gnomon::report::print_human(&report, &budget),
                 OutputFormat::Json => gnomon::report::print_json(&report)?,
+                OutputFormat::Sarif => gnomon::report::print_sarif(&report)?,
             }
 
             Ok(if report.violations.is_empty() {

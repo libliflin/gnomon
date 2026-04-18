@@ -51,12 +51,30 @@ Add gnomon to a GitHub Actions workflow using the pre-built binary:
   run: gnomon audit https://staging.your-site.com
 ```
 
+For violations as inline PR diff annotations (requires GitHub code scanning):
+
+```yaml
+- name: Install gnomon
+  run: |
+    curl -fsSL https://github.com/libliflin/gnomon/releases/latest/download/gnomon-x86_64-unknown-linux-musl.tar.gz | tar xz
+    sudo mv gnomon /usr/local/bin/
+- name: Audit performance budget (SARIF)
+  run: gnomon audit https://staging.your-site.com --format sarif > results.sarif; true
+- name: Upload SARIF to GitHub code scanning
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
+```
+
+Exit code 1 (violations) must not abort the workflow before the upload step — the `; true` suffix ensures the SARIF file is always uploaded. GitHub surfaces each violation as an inline annotation on the PR diff.
+
 ## Use
 
 ```sh
 gnomon audit https://example.com                     # auto-loads ./gnomon.toml; falls back to insley preset
 gnomon audit https://example.com --preset mcmaster   # looser, still opinionated
-gnomon audit https://example.com --format json       # for CI
+gnomon audit https://example.com --format json       # machine-readable
+gnomon audit https://example.com --format sarif      # SARIF 2.1.0 for GitHub code scanning
 gnomon audit https://example.com --config path/to/gnomon.toml  # explicit config path
 gnomon presets                                        # print the built-in budgets
 gnomon budget-init --preset mcmaster                  # write a starter gnomon.toml
@@ -87,7 +105,7 @@ Working today:
   session-replay tools, Google ads, DoubleClick, polyfill.io, etc.)
 - Anti-theater detection (lazy-loaded LCP candidate, preload-as-stylesheet trick,
   missing viewport)
-- Human + JSON output
+- Human, JSON, and SARIF 2.1.0 output (`--format sarif`)
 
 Coming later:
 
@@ -95,7 +113,7 @@ Coming later:
 - `--dir` for auditing a built directory before deploy
 - `gnomon budget tighten` (the ratchet)
 - Justifications with 90-day expiries
-- SARIF output and GitHub Action
+- GitHub Action (`libliflin/gnomon-action@v1`)
 - Per-route overrides
 
 ## License

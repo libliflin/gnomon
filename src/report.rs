@@ -136,3 +136,212 @@ pub fn print_json(r: &AuditReport) -> anyhow::Result<()> {
     println!("{s}");
     Ok(())
 }
+
+pub fn print_sarif(r: &AuditReport) -> anyhow::Result<()> {
+    use serde_json::{Value, json};
+    use std::collections::HashSet;
+
+    // One rule entry per unique ruleId.
+    let mut seen: HashSet<String> = HashSet::new();
+    let rules: Vec<Value> = r
+        .violations
+        .iter()
+        .filter_map(|v| {
+            let id = format!("{}/{}", v.kind.label(), v.metric);
+            if seen.insert(id.clone()) {
+                Some(json!({
+                    "id": id,
+                    "shortDescription": { "text": v.metric }
+                }))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let results: Vec<Value> = r
+        .violations
+        .iter()
+        .map(|v| {
+            json!({
+                "ruleId": format!("{}/{}", v.kind.label(), v.metric),
+                "level": "error",
+                "message": { "text": v.detail.clone() },
+                "locations": [{
+                    "physicalLocation": {
+                        "artifactLocation": { "uri": r.url.clone() }
+                    }
+                }]
+            })
+        })
+        .collect();
+
+    let sarif = json!({
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "gnomon",
+                    "version": r.gnomon_version,
+                    "informationUri": "https://github.com/libliflin/gnomon",
+                    "rules": rules
+                }
+            },
+            "results": results
+        }]
+    });
+
+    let s = serde_json::to_string_pretty(&sarif)?;
+    println!("{s}");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::audit::{AuditReport, Totals};
+    use crate::analyze::HtmlAnalysis;
+    use crate::fetch::Fetched;
+    use crate::violation::{Violation, ViolationKind};
+
+    fn minimal_fetched() -> Fetched {
+        Fetched {
+            url: "https://example.com".to_string(),
+            status: 200,
+            content_type: None,
+            wire_bytes: 0,
+            raw_bytes: 0,
+            brotli_bytes: 0,
+            error: None,
+            body: None,
+        }
+    }
+
+    fn minimal_report(violations: Vec<Violation>) -> AuditReport {
+        let pass = violations.is_empty();
+        AuditReport {
+            url: "https://example.com".to_string(),
+            gnomon_version: "0.0.0",
+            preset: "insley",
+            pass,
+            elapsed_ms: 0,
+            html: minimal_fetched(),
+            html_analysis: HtmlAnalysis::default(),
+            resources: vec![],
+            totals: Totals::default(),
+            violations,
+        }
+    }
+
+    fn sarif_output(r: &AuditReport) -> serde_json::Value {
+        use std::collections::HashSet;
+        use serde_json::{Value, json};
+
+        let mut seen: HashSet<String> = HashSet::new();
+        let rules: Vec<Value> = r
+            .violations
+            .iter()
+            .filter_map(|v| {
+                let id = format!("{}/{}", v.kind.label(), v.metric);
+                if seen.insert(id.clone()) {
+                    Some(json!({
+                        "id": id,
+                        "shortDescription": { "text": v.metric }
+                    }))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let results: Vec<Value> = r
+            .violations
+            .iter()
+            .map(|v| {
+                json!({
+                    "ruleId": format!("{}/{}", v.kind.label(), v.metric),
+                    "level": "error",
+                    "message": { "text": v.detail.clone() },
+                    "locations": [{
+                        "physicalLocation": {
+                            "artifactLocation": { "uri": r.url.clone() }
+                        }
+                    }]
+                })
+            })
+            .collect();
+
+        json!({
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [{
+                "tool": {
+                    "driver": {
+                        "name": "gnomon",
+                        "version": r.gnomon_version,
+                        "informationUri": "https://github.com/libliflin/gnomon",
+                        "rules": rules
+                    }
+                },
+                "results": results
+            }]
+        })
+    }
+
+    #[test]
+    fn sarif_schema_fields_present() {
+        let r = minimal_report(vec![]);
+        let v = sarif_output(&r);
+        assert_eq!(v["version"], "2.1.0");
+        assert!(v["$schema"].as_str().unwrap().contains("sarif-schema-2.1.0"));
+        assert!(v["runs"].is_array());
+        assert!(v["runs"][0]["tool"]["driver"]["name"] == "gnomon");
+    }
+
+    #[test]
+    fn sarif_empty_violations_produces_empty_results() {
+        let r = minimal_report(vec![]);
+        let v = sarif_output(&r);
+        let results = v["runs"][0]["results"].as_array().unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn sarif_single_violation_maps_correctly() {
+        let violation = Violation {
+            kind: ViolationKind::Bytes,
+            metric: "css",
+            budget: 14336,
+            actual: 47000,
+            detail: "33 KiB over — main.css (28 KiB)".to_string(),
+        };
+        let r = minimal_report(vec![violation]);
+        let v = sarif_output(&r);
+        let result = &v["runs"][0]["results"][0];
+        assert_eq!(result["level"], "error");
+        assert_eq!(result["message"]["text"], "33 KiB over — main.css (28 KiB)");
+        let location_uri = &result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"];
+        assert_eq!(location_uri, "https://example.com");
+    }
+
+    #[test]
+    fn sarif_rule_id_format_is_kind_slash_metric() {
+        let violation = Violation {
+            kind: ViolationKind::Theater,
+            metric: "img_dimensions",
+            budget: 0,
+            actual: 3,
+            detail: "3 <img> element(s) missing explicit width/height — layout shift (CLS)"
+                .to_string(),
+        };
+        let r = minimal_report(vec![violation]);
+        let v = sarif_output(&r);
+        let rule_id = v["runs"][0]["results"][0]["ruleId"].as_str().unwrap();
+        assert_eq!(rule_id, "theater/img_dimensions");
+        // Also pinned in the rules array.
+        let rules_id = v["runs"][0]["tool"]["driver"]["rules"][0]["id"]
+            .as_str()
+            .unwrap();
+        assert_eq!(rules_id, "theater/img_dimensions");
+    }
+}
