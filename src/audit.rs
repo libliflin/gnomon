@@ -551,6 +551,27 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
                 .into(),
         });
     }
+    if analysis.has_speculation_prerender {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "speculation_prerender",
+            budget: 0,
+            actual: 1,
+            detail: "<script type=\"speculationrules\"> with prerender — games cold-cache LCP measurement".into(),
+        });
+    }
+    if analysis.picture_missing_modern_source > 0 {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "picture_no_modern_source",
+            budget: 0,
+            actual: analysis.picture_missing_modern_source as u64,
+            detail: format!(
+                "{} <picture> element(s) with no WebP or AVIF source — format negotiation is decorative",
+                analysis.picture_missing_modern_source
+            ),
+        });
+    }
     vios
 }
 
@@ -1396,6 +1417,87 @@ mod tests {
         let r = minimal_report("mcmaster", vios);
         assert!(!r.pass, "pass must be false when violations is non-empty");
         assert_eq!(r.preset, "mcmaster");
+    }
+
+    #[test]
+    fn theater_violations_speculation_prerender_fires() {
+        let analysis = HtmlAnalysis {
+            has_speculation_prerender: true,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "speculation_prerender");
+        assert_eq!(vios[0].kind, ViolationKind::Theater);
+        assert_eq!(
+            vios[0].detail,
+            "<script type=\"speculationrules\"> with prerender — games cold-cache LCP measurement"
+        );
+    }
+
+    #[test]
+    fn theater_violations_speculation_prerender_silent_when_false() {
+        let analysis = HtmlAnalysis {
+            has_speculation_prerender: false,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        let spec_vios: Vec<_> = vios.iter().filter(|v| v.metric == "speculation_prerender").collect();
+        assert!(spec_vios.is_empty(), "false has_speculation_prerender must not fire");
+    }
+
+    #[test]
+    fn theater_violations_picture_no_modern_source_fires() {
+        let analysis = HtmlAnalysis {
+            picture_missing_modern_source: 3,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "picture_no_modern_source");
+        assert_eq!(vios[0].kind, ViolationKind::Theater);
+        assert_eq!(vios[0].actual, 3);
+        assert_eq!(
+            vios[0].detail,
+            "3 <picture> element(s) with no WebP or AVIF source — format negotiation is decorative"
+        );
+    }
+
+    #[test]
+    fn theater_violations_picture_no_modern_source_zero_no_violation() {
+        let analysis = HtmlAnalysis {
+            picture_missing_modern_source: 0,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        let pic_vios: Vec<_> = vios.iter().filter(|v| v.metric == "picture_no_modern_source").collect();
+        assert!(pic_vios.is_empty(), "zero picture_missing_modern_source must not fire");
+    }
+
+    #[test]
+    fn theater_violations_picture_no_modern_source_single_element() {
+        let analysis = HtmlAnalysis {
+            picture_missing_modern_source: 1,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "picture_no_modern_source");
+        assert_eq!(vios[0].actual, 1);
+        assert_eq!(
+            vios[0].detail,
+            "1 <picture> element(s) with no WebP or AVIF source — format negotiation is decorative"
+        );
     }
 
     #[test]

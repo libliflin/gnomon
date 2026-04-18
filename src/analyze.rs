@@ -18,6 +18,8 @@ pub struct HtmlAnalysis {
     pub lazy_lcp_candidate: bool,
     pub has_viewport_meta: bool,
     pub has_charset_meta: bool,
+    pub has_speculation_prerender: bool,
+    pub picture_missing_modern_source: u32,
 
     pub preload_hint_count: u32,
     pub preconnect_targets: Vec<String>,
@@ -43,6 +45,8 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
     let sel_link = Selector::parse("link").unwrap();
     let sel_style = Selector::parse("style").unwrap();
     let sel_img = Selector::parse("img").unwrap();
+    let sel_picture = Selector::parse("picture").unwrap();
+    let sel_source = Selector::parse("source").unwrap();
     let sel_iframe = Selector::parse("iframe").unwrap();
     let sel_meta = Selector::parse("meta").unwrap();
 
@@ -58,6 +62,17 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
     // </head> as blocking; scraper gives us the whole tree so we approximate
     // by looking for an ancestor <head>.)
     for el in doc.select(&sel_script) {
+        // Speculation rules: JSON metadata, not executable JS — handle separately.
+        let type_attr = el.value().attr("type").unwrap_or("").to_ascii_lowercase();
+        if type_attr == "speculationrules" {
+            let body: String = el.text().collect();
+            if body.contains("\"prerender\"") {
+                a.has_speculation_prerender = true;
+            }
+            // Not executable JS — skip render-blocking and inline-bytes accounting.
+            continue;
+        }
+
         let async_ = el.value().attr("async").is_some();
         let defer = el.value().attr("defer").is_some();
         let in_head = has_ancestor(&el, "head");
@@ -212,6 +227,17 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
             });
         }
         first_img = false;
+    }
+
+    // <picture> format negotiation: count elements with no WebP or AVIF <source>.
+    for el in doc.select(&sel_picture) {
+        let has_modern_source = el.select(&sel_source).any(|s| {
+            let t = s.value().attr("type").unwrap_or("").to_ascii_lowercase();
+            t == "image/webp" || t == "image/avif"
+        });
+        if !has_modern_source {
+            a.picture_missing_modern_source += 1;
+        }
     }
 
     // <iframe>
@@ -767,6 +793,131 @@ mod tests {
             a.preload_hint_count, 1,
             "rel=modulepreload satisfies contains(\"preload\") and must increment preload_hint_count"
         );
+    }
+
+    // ── has_speculation_prerender ─────────────────────────────────────────────
+
+    #[test]
+    fn speculation_prerender_fires_on_prerender_key() {
+        let html = r#"<!doctype html><html><head>
+            <script type="speculationrules">
+            {"prerender": [{"source": "list", "urls": ["/"]}]}
+            </script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(a.has_speculation_prerender, "prerender key in speculationrules must set flag");
+    }
+
+    #[test]
+    fn speculation_prerender_clear_when_no_speculation_script() {
+        let html = r#"<!doctype html><html><head>
+            <script src="/app.js"></script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(!a.has_speculation_prerender, "regular script must not set speculation_prerender");
+    }
+
+    #[test]
+    fn speculation_prerender_clear_when_only_prefetch() {
+        let html = r#"<!doctype html><html><head>
+            <script type="speculationrules">
+            {"prefetch": [{"source": "list", "urls": ["/"]}]}
+            </script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(!a.has_speculation_prerender, "prefetch-only speculation rules must not set flag");
+    }
+
+    #[test]
+    fn speculation_prerender_does_not_count_inline_script_bytes() {
+        // Speculation rules JSON is metadata, not executable JS — must not roll into
+        // inline_script_bytes so it doesn't pollute the JS budget.
+        let html = r#"<!doctype html><html><head>
+            <script type="speculationrules">{"prerender": [{"source": "list", "urls": ["/"]}]}</script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.inline_script_bytes, 0, "speculation rules must not count as inline JS bytes");
+    }
+
+    // ── picture_missing_modern_source ─────────────────────────────────────────
+
+    #[test]
+    fn picture_missing_modern_source_counts_picture_with_jpeg_only() {
+        let html = r#"<!doctype html><html><body>
+            <picture>
+                <source srcset="/image.jpg" type="image/jpeg">
+                <img src="/image.jpg" width="800" height="400">
+            </picture>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 1);
+    }
+
+    #[test]
+    fn picture_missing_modern_source_zero_when_webp_source_present() {
+        let html = r#"<!doctype html><html><body>
+            <picture>
+                <source srcset="/image.webp" type="image/webp">
+                <source srcset="/image.jpg" type="image/jpeg">
+                <img src="/image.jpg" width="800" height="400">
+            </picture>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 0);
+    }
+
+    #[test]
+    fn picture_missing_modern_source_zero_when_avif_source_present() {
+        let html = r#"<!doctype html><html><body>
+            <picture>
+                <source srcset="/image.avif" type="image/avif">
+                <img src="/image.jpg" width="800" height="400">
+            </picture>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 0);
+    }
+
+    #[test]
+    fn picture_missing_modern_source_counts_multiple_non_modern_pictures() {
+        let html = r#"<!doctype html><html><body>
+            <picture>
+                <source srcset="/a.jpg" type="image/jpeg">
+                <img src="/a.jpg" width="800" height="400">
+            </picture>
+            <picture>
+                <source srcset="/b.png" type="image/png">
+                <img src="/b.png" width="400" height="200">
+            </picture>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 2);
+    }
+
+    #[test]
+    fn picture_missing_modern_source_zero_when_no_pictures() {
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg" width="800" height="400">
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 0);
+    }
+
+    #[test]
+    fn picture_missing_modern_source_partial_mix_counts_correctly() {
+        // One picture has modern source, one doesn't — only the latter is counted.
+        let html = r#"<!doctype html><html><body>
+            <picture>
+                <source srcset="/hero.avif" type="image/avif">
+                <img src="/hero.jpg" width="800" height="400">
+            </picture>
+            <picture>
+                <source srcset="/thumb.jpg" type="image/jpeg">
+                <img src="/thumb.jpg" width="200" height="100">
+            </picture>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 1);
     }
 
     // ── meta tags ─────────────────────────────────────────────────────────────
