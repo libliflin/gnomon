@@ -251,12 +251,31 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
         totals.third_party_domains,
         budget.preset.count.third_party_domains,
     );
-    count_check(
-        &mut violations,
-        "render_blocking",
-        totals.render_blocking,
-        budget.preset.count.render_blocking,
-    );
+    {
+        let actual = totals.render_blocking;
+        let bgt = budget.preset.count.render_blocking;
+        if actual > bgt {
+            let blocking_names: Vec<String> = analysis
+                .stylesheet_urls
+                .iter()
+                .chain(analysis.script_urls.iter())
+                .filter(|r| r.render_blocking)
+                .map(|r| url_filename(&r.url))
+                .collect();
+            let mut detail = format!("{} over", actual - bgt);
+            if !blocking_names.is_empty() {
+                detail.push_str(" — ");
+                detail.push_str(&blocking_names.join(", "));
+            }
+            violations.push(Violation {
+                kind: ViolationKind::Count,
+                metric: "render_blocking",
+                budget: bgt as u64,
+                actual: actual as u64,
+                detail,
+            });
+        }
+    }
     count_check(&mut violations, "fonts", totals.fonts_count, budget.preset.count.fonts);
 
     // Forbidden list.
