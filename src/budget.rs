@@ -375,10 +375,27 @@ mod tests {
     /// CWD is process-global state. Serialize all tests that touch it.
     static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// Restores the working directory on drop — panic-safe.
+    ///
+    /// Without this, a panic inside a CWD test leaves the process in the temp
+    /// directory, poisons `CWD_LOCK`, and causes every subsequent CWD test to
+    /// fail with a misleading lock-poison error rather than the real failure.
+    struct CwdGuard(std::path::PathBuf);
+    impl CwdGuard {
+        fn new() -> Self {
+            Self(std::env::current_dir().unwrap())
+        }
+    }
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
     #[test]
     fn resolve_budget_auto_discovers_gnomon_toml_in_cwd() {
-        let _guard = CWD_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
+        let _lock = CWD_LOCK.lock().unwrap();
+        let _cwd = CwdGuard::new();
 
         let tmp = std::env::temp_dir().join("gnomon_test_autodiscover");
         std::fs::create_dir_all(&tmp).unwrap();
@@ -386,7 +403,6 @@ mod tests {
 
         std::env::set_current_dir(&tmp).unwrap();
         let result = resolve_budget(PresetName::Insley, None);
-        std::env::set_current_dir(&original).unwrap();
 
         let budget = result.unwrap();
         // Loaded mcmaster from gnomon.toml — not the insley default that was passed in.
@@ -395,8 +411,8 @@ mod tests {
 
     #[test]
     fn resolve_budget_explicit_config_overrides_auto_discovery() {
-        let _guard = CWD_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
+        let _lock = CWD_LOCK.lock().unwrap();
+        let _cwd = CwdGuard::new();
 
         // CWD has a mcmaster gnomon.toml — but explicit --config should win.
         let tmp = std::env::temp_dir().join("gnomon_test_explicit_override");
@@ -407,7 +423,6 @@ mod tests {
 
         std::env::set_current_dir(&tmp).unwrap();
         let result = resolve_budget(PresetName::Mcmaster, Some(&explicit));
-        std::env::set_current_dir(&original).unwrap();
 
         let budget = result.unwrap();
         assert_eq!(budget.preset.name, "insley");
@@ -415,8 +430,8 @@ mod tests {
 
     #[test]
     fn resolve_budget_falls_back_to_preset_when_no_file() {
-        let _guard = CWD_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
+        let _lock = CWD_LOCK.lock().unwrap();
+        let _cwd = CwdGuard::new();
 
         // Use a temp dir that definitely has no gnomon.toml.
         let tmp = std::env::temp_dir().join("gnomon_test_no_file");
@@ -425,7 +440,6 @@ mod tests {
 
         std::env::set_current_dir(&tmp).unwrap();
         let result = resolve_budget(PresetName::Mcmaster, None);
-        std::env::set_current_dir(&original).unwrap();
 
         let budget = result.unwrap();
         assert_eq!(budget.preset.name, "mcmaster");
@@ -433,8 +447,8 @@ mod tests {
 
     #[test]
     fn resolve_budget_auto_discovery_fails_closed_on_malformed_toml() {
-        let _guard = CWD_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
+        let _lock = CWD_LOCK.lock().unwrap();
+        let _cwd = CwdGuard::new();
 
         let tmp = std::env::temp_dir().join("gnomon_test_malformed");
         std::fs::create_dir_all(&tmp).unwrap();
@@ -443,7 +457,6 @@ mod tests {
 
         std::env::set_current_dir(&tmp).unwrap();
         let result = resolve_budget(PresetName::Insley, None);
-        std::env::set_current_dir(&original).unwrap();
 
         assert!(result.is_err(), "malformed gnomon.toml must error, not silently fall through");
         let msg = format!("{}", result.unwrap_err());
