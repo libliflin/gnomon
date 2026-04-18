@@ -1451,4 +1451,23 @@ mod tests {
         // Empty resource list must never produce a violation.
         assert_eq!(count_legacy_images(&[]), 0);
     }
+
+    #[test]
+    fn count_legacy_images_fires_for_gif() {
+        // GIF is named in the goal and the detail string — must count toward the
+        // legacy total alongside JPEG and PNG.
+        let fetched = vec![fetched_with_ct(Some("image/gif"), None)];
+        assert_eq!(count_legacy_images(&fetched), 1);
+    }
+
+    #[test]
+    fn count_legacy_images_strips_mime_parameters() {
+        // Content-Type headers may include parameters (e.g. `image/jpeg; quality=85`).
+        // The base type must still be recognised as legacy after the `;` is stripped.
+        let fetched = vec![
+            fetched_with_ct(Some("image/jpeg; quality=85"), None),
+            fetched_with_ct(Some("image/png; charset=utf-8"), None),
+        ];
+        assert_eq!(count_legacy_images(&fetched), 2);
+    }
 }
