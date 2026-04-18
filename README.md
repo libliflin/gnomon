@@ -40,23 +40,25 @@ cargo install gnomon
 
 ## CI Integration
 
-Add gnomon to a GitHub Actions workflow using the pre-built binary:
+Add gnomon to a GitHub Actions workflow using the pre-built binary. **Pin the version** so gnomon updates don't change CI behavior without a deliberate upgrade:
 
 ```yaml
 - name: Install gnomon
   run: |
-    curl -fsSL https://github.com/libliflin/gnomon/releases/latest/download/gnomon-x86_64-unknown-linux-musl.tar.gz | tar xz
+    curl -fsSL https://github.com/libliflin/gnomon/releases/download/v0.0.2/gnomon-x86_64-unknown-linux-musl.tar.gz | tar xz
     sudo mv gnomon /usr/local/bin/
 - name: Audit performance budget
   run: gnomon audit https://staging.your-site.com
 ```
+
+Replace `v0.0.2` with the release you want to pin. Update the tag deliberately when you're ready to adopt a new release — don't use `latest` in CI unless you want silent behavior changes on every gnomon update.
 
 For violations surfaced in GitHub code scanning AND a failing build (the correct combined pattern):
 
 ```yaml
 - name: Install gnomon
   run: |
-    curl -fsSL https://github.com/libliflin/gnomon/releases/latest/download/gnomon-x86_64-unknown-linux-musl.tar.gz | tar xz
+    curl -fsSL https://github.com/libliflin/gnomon/releases/download/v0.0.2/gnomon-x86_64-unknown-linux-musl.tar.gz | tar xz
     sudo mv gnomon /usr/local/bin/
 - name: Audit performance budget (SARIF)
   run: gnomon audit https://staging.your-site.com --format sarif > results.sarif || true
