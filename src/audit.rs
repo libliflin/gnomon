@@ -1107,6 +1107,45 @@ mod tests {
         assert!(!detail.contains("fonts"), "zero-byte fonts must not appear: {detail}");
     }
 
+    #[test]
+    fn total_bytes_violation_detail_exact_format() {
+        // Pins the exact detail string from the goal's example:
+        // "3 KiB over 100 KiB budget — images (82 KiB), css (13 KiB)"
+        // Verifies that category names and sizes both appear correctly — not just
+        // that the names are present (weaker), but that the full format matches.
+        let mut contributors: Vec<(String, u64)> = vec![
+            ("html".to_string(), 8_192u64),
+            ("css".to_string(), 13_312u64),
+            ("images".to_string(), 83_968u64),
+        ];
+        contributors.sort_unstable_by_key(|&(_, b)| std::cmp::Reverse(b));
+        let total: u64 = 8_192 + 13_312 + 83_968; // 105,472 — 3 KiB over 100 KiB
+        let budget: u64 = 102_400;
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "total", total, budget, &contributors);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(
+            vios[0].detail,
+            "3 KiB over 100 KiB budget — images (82 KiB), css (13 KiB)"
+        );
+    }
+
+    #[test]
+    fn total_bytes_no_violation_at_budget() {
+        // total exactly equals budget — must not fire, even with contributors populated.
+        // Pins the `actual > budget` boundary for the total metric specifically.
+        let contributors: Vec<(String, u64)> = vec![
+            ("images".to_string(), 83_968u64),
+            ("css".to_string(), 13_312u64),
+            ("html".to_string(), 5_120u64),
+        ];
+        let total: u64 = 83_968 + 13_312 + 5_120; // 102,400 — exactly 100 KiB
+        let budget: u64 = 102_400;
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "total", total, budget, &contributors);
+        assert!(vios.is_empty(), "total exactly at budget must not fire, got: {vios:?}");
+    }
+
     // ---- theater_violations ----
 
     #[test]
