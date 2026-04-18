@@ -329,17 +329,8 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     // Image format — JPEG/PNG/GIF when AVIF/WebP should be used.
     // Assembled from fetched resources (not from HTML analysis), so it lives here
     // rather than in theater_violations.
-    let legacy_fmt_count = count_legacy_images(&fetched);
-    if legacy_fmt_count > 0 {
-        violations.push(Violation {
-            kind: ViolationKind::Theater,
-            metric: "img_format",
-            budget: 0,
-            actual: legacy_fmt_count as u64,
-            detail: format!(
-                "{legacy_fmt_count} image(s) served as JPEG/PNG/GIF — serve AVIF or WebP to reduce transfer size"
-            ),
-        });
+    if let Some(v) = img_format_violation(&fetched) {
+        violations.push(v);
     }
 
     // Fetch errors.
@@ -561,6 +552,28 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
         });
     }
     vios
+}
+
+/// Produces an `img_format` Theater violation when any successfully-fetched
+/// resource is served as JPEG, PNG, or GIF. Returns `None` when all images are
+/// already in a modern format (AVIF, WebP) or when the fetched list is empty.
+/// Extracted from `audit_url` so the violation fields and detail string can be
+/// pinned directly in tests without a live network call.
+fn img_format_violation(fetched: &[Fetched]) -> Option<Violation> {
+    let count = count_legacy_images(fetched);
+    if count > 0 {
+        Some(Violation {
+            kind: ViolationKind::Theater,
+            metric: "img_format",
+            budget: 0,
+            actual: count as u64,
+            detail: format!(
+                "{count} image(s) served as JPEG/PNG/GIF — serve AVIF or WebP to reduce transfer size"
+            ),
+        })
+    } else {
+        None
+    }
 }
 
 /// Returns the count of successfully fetched resources served in a legacy image
@@ -1469,5 +1482,51 @@ mod tests {
             fetched_with_ct(Some("image/png; charset=utf-8"), None),
         ];
         assert_eq!(count_legacy_images(&fetched), 2);
+    }
+
+    // ---- img_format_violation ----
+
+    #[test]
+    fn img_format_violation_fires_with_correct_fields() {
+        // Three legacy images — violation must carry kind=Theater, metric="img_format",
+        // budget=0, actual=3, and a detail string naming both the legacy and target formats.
+        let fetched = vec![
+            fetched_with_ct(Some("image/jpeg"), None),
+            fetched_with_ct(Some("image/png"), None),
+            fetched_with_ct(Some("image/gif"), None),
+        ];
+        let v = img_format_violation(&fetched).expect("violation must fire");
+        assert_eq!(v.kind, ViolationKind::Theater);
+        assert_eq!(v.metric, "img_format");
+        assert_eq!(v.budget, 0);
+        assert_eq!(v.actual, 3);
+        assert!(
+            v.detail.contains("JPEG/PNG/GIF"),
+            "detail must name the legacy formats"
+        );
+        assert!(
+            v.detail.contains("AVIF or WebP"),
+            "detail must name the target formats"
+        );
+        assert!(
+            v.detail.starts_with("3 "),
+            "detail must lead with the count"
+        );
+    }
+
+    #[test]
+    fn img_format_violation_returns_none_for_modern_formats() {
+        // WebP and AVIF — no violation. Pins the None branch.
+        let fetched = vec![
+            fetched_with_ct(Some("image/webp"), None),
+            fetched_with_ct(Some("image/avif"), None),
+        ];
+        assert!(img_format_violation(&fetched).is_none());
+    }
+
+    #[test]
+    fn img_format_violation_returns_none_for_empty_list() {
+        // Empty fetched list — boundary: zero images must never produce a violation.
+        assert!(img_format_violation(&[]).is_none());
     }
 }
