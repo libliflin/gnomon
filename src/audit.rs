@@ -753,6 +753,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn bytes_check_zero_budget_nonzero_actual_fires() {
+        // Zero budget (insley preset: js = 0) with any nonzero actual must fire.
+        // Pins that the `actual > budget` path fires when budget == 0 and actual == 1,
+        // and that the detail string is legible ("X over 0 B budget").
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "js", 460_800, 0, &[]);
+        assert_eq!(vios.len(), 1, "zero budget with nonzero actual must fire");
+        let detail = &vios[0].detail;
+        assert!(
+            detail.contains("budget"),
+            "detail must include 'budget', got: {detail}"
+        );
+        assert!(
+            detail.contains("0 B budget"),
+            "zero budget must render as '0 B budget', got: {detail}"
+        );
+    }
+
     // ---- bytes_check with inline synthetic contributors ----
 
     #[test]
