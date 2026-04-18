@@ -310,3 +310,110 @@ pub fn classify(url: &str, content_type: Option<&str>) -> AssetKind {
         _ => AssetKind::Other,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn analyze(html: &str) -> HtmlAnalysis {
+        let base = url::Url::parse("https://example.com/").unwrap();
+        analyze_html(html, &base)
+    }
+
+    // ── lazy_lcp_candidate ────────────────────────────────────────────────────
+
+    #[test]
+    fn lazy_lcp_candidate_fires_on_first_lazy_img() {
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg" loading="lazy" width="800" height="400">
+        </body></html>"#;
+        let a = analyze(html);
+        assert!(a.lazy_lcp_candidate, "first lazy <img> must set lazy_lcp_candidate");
+    }
+
+    #[test]
+    fn lazy_lcp_candidate_clear_when_first_img_not_lazy() {
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg" width="800" height="400">
+            <img src="/thumb.jpg" loading="lazy" width="200" height="100">
+        </body></html>"#;
+        let a = analyze(html);
+        assert!(!a.lazy_lcp_candidate, "first eager <img> must not set lazy_lcp_candidate");
+    }
+
+    // ── render_blocking_in_head ───────────────────────────────────────────────
+
+    #[test]
+    fn render_blocking_script_in_head_is_counted() {
+        let html = r#"<!doctype html><html><head>
+            <script src="/app.js"></script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 1);
+        assert!(a.script_urls[0].render_blocking);
+    }
+
+    #[test]
+    fn deferred_script_in_head_is_not_blocking() {
+        let html = r#"<!doctype html><html><head>
+            <script src="/app.js" defer></script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+        assert!(!a.script_urls[0].render_blocking);
+    }
+
+    #[test]
+    fn script_in_body_is_not_blocking() {
+        let html = r#"<!doctype html><html><head></head><body>
+            <script src="/app.js"></script>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+    }
+
+    // ── inline_style_bytes ────────────────────────────────────────────────────
+
+    #[test]
+    fn inline_style_bytes_counted() {
+        let css = "body { color: red; }";
+        let html = format!(r#"<!doctype html><html><head><style>{css}</style></head><body></body></html>"#);
+        let a = analyze(&html);
+        assert_eq!(a.inline_style_bytes, css.len() as u64);
+    }
+
+    #[test]
+    fn multiple_style_blocks_are_summed() {
+        let css1 = "body { margin: 0; }";
+        let css2 = "h1 { font-size: 2rem; }";
+        let html = format!(
+            r#"<!doctype html><html><head><style>{css1}</style></head><body><style>{css2}</style></body></html>"#
+        );
+        let a = analyze(&html);
+        assert_eq!(a.inline_style_bytes, (css1.len() + css2.len()) as u64);
+    }
+
+    // ── preload_as_style_is_render_blocking ───────────────────────────────────
+
+    #[test]
+    fn preload_as_style_is_render_blocking() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="style" href="/fonts.css">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 1, "preload as=style must count as render-blocking");
+        assert!(
+            a.stylesheet_urls.iter().any(|r| r.render_blocking),
+            "the preloaded stylesheet must be flagged render_blocking"
+        );
+    }
+
+    #[test]
+    fn preload_as_font_is_not_render_blocking() {
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/font.woff2">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+    }
+}
