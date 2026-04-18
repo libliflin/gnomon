@@ -1,3 +1,34 @@
+# Champion Changelog — Cycle 16
+
+## Stakeholder
+
+The web performance engineer (stakeholder 1). Last served cycle 12 — four cycles ago, the longest wait in the current rotation.
+
+## Journey Walked
+
+1. Floor check: build clean, 109 tests passing, clippy clean. No floor issues.
+2. `gnomon audit https://example.com --format json` — PASS, no violations.
+3. Scanned `html_analysis` in JSON. Found `has_charset_meta: false`. Checked violations array — empty.
+4. CONTRIBUTING.md (cycle 15) documents `has_charset_meta` as "a known gap / good first issue."
+5. The gap is still open. No violation fires for missing charset meta.
+
+## Worst Moment
+
+Step 3. `has_charset_meta: false` is in the JSON. The violations array is empty. Gnomon detected a render-critical encoding-sniff risk and said nothing. PLAN.md §7.1 lists it. CONTRIBUTING.md calls it a known gap. The violations array and the `html_analysis` object tell different stories. A web performance engineer cannot build a dashboard on violations if violations don't reflect everything gnomon knows.
+
+## Goal Set
+
+Add `!analysis.has_charset_meta` branch to `theater_violations`. Fire `Theater/charset_meta` with detail `"missing <meta charset> or http-equiv Content-Type — forces encoding sniff"`. Add two tests. Update CONTRIBUTING.md's good first issues section — `has_charset_meta` is no longer a gap once this lands.
+
+## Why This Goal, Not Another
+
+- Web perf engineer is the most under-served stakeholder (4 cycles).
+- Same class as cycle 12 (`img_missing_dimensions`): detected, tested, serialized, never fires.
+- `has_charset_meta` is the last field in `HtmlAnalysis` with detection AND PLAN.md §7.1 backing AND no violation branch.
+- The gap is now doubly visible: CONTRIBUTING.md says "known gap" — the JSON confirms it; the violations array denies it. Trust failure.
+
+---
+
 # Champion Changelog — Cycle 13
 
 ## Stakeholder
