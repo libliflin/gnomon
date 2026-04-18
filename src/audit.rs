@@ -65,10 +65,10 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     let mut seen: HashSet<String> = HashSet::new();
 
     let push_resource = |u: &str, to_fetch: &mut Vec<Url>, seen: &mut HashSet<String>| {
-        if seen.insert(u.to_string()) {
-            if let Ok(parsed) = Url::parse(u) {
-                to_fetch.push(parsed);
-            }
+        if seen.insert(u.to_string())
+            && let Ok(parsed) = Url::parse(u)
+        {
+            to_fetch.push(parsed);
         }
     };
 
@@ -114,16 +114,22 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     let is_img: HashSet<&str> = analysis.image_urls.iter().map(|r| r.url.as_str()).collect();
     let is_font: HashSet<&str> = analysis.font_urls.iter().map(|r| r.url.as_str()).collect();
 
+    // Per-category resource lists for violation contributor hints.
+    let mut css_resources: Vec<(String, u64)> = Vec::new();
+    let mut js_resources: Vec<(String, u64)> = Vec::new();
+    let mut image_resources: Vec<(String, u64)> = Vec::new();
+    let mut font_resources: Vec<(String, u64)> = Vec::new();
+
     for f in &fetched {
         let size = f.brotli_bytes;
 
         // Host for third-party tally.
-        if let Ok(u) = Url::parse(&f.url) {
-            if let Some(host) = u.host_str() {
-                let reg = registrable_domain(host);
-                if !reg.is_empty() && reg != root_host_root {
-                    third_party_hosts.insert(reg);
-                }
+        if let Ok(u) = Url::parse(&f.url)
+            && let Some(host) = u.host_str()
+        {
+            let reg = registrable_domain(host);
+            if !reg.is_empty() && reg != root_host_root {
+                third_party_hosts.insert(reg);
             }
         }
 
@@ -140,18 +146,34 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
         };
 
         match kind {
-            AssetKind::Css => totals.css_bytes += size,
-            AssetKind::Js => totals.js_bytes += size,
-            AssetKind::Image => totals.image_bytes += size,
+            AssetKind::Css => {
+                totals.css_bytes += size;
+                css_resources.push((f.url.clone(), size));
+            }
+            AssetKind::Js => {
+                totals.js_bytes += size;
+                js_resources.push((f.url.clone(), size));
+            }
+            AssetKind::Image => {
+                totals.image_bytes += size;
+                image_resources.push((f.url.clone(), size));
+            }
             AssetKind::Font => {
                 totals.font_bytes += size;
                 totals.fonts_count += 1;
+                font_resources.push((f.url.clone(), size));
             }
             AssetKind::Html | AssetKind::Other => {
                 // Do not attribute to a typed bucket, but still counts toward total.
             }
         }
     }
+
+    // Sort each category descending by size so top contributors are first.
+    css_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    js_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    image_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    font_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
 
     totals.total_bytes =
         totals.html_brotli + totals.css_bytes + totals.js_bytes + totals.image_bytes + totals.font_bytes;
@@ -167,29 +189,48 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     let mut violations = Vec::new();
 
     // Byte budgets.
-    fn bytes_check(vios: &mut Vec<Violation>, metric: &'static str, actual: u64, budget: u64) {
+    fn bytes_check(
+        vios: &mut Vec<Violation>,
+        metric: &'static str,
+        actual: u64,
+        budget: u64,
+        top: &[(String, u64)],
+    ) {
         if actual > budget {
+            let mut detail = format!(
+                "{} over",
+                humansize::format_size(actual.saturating_sub(budget), humansize::BINARY)
+            );
+            let contributors: Vec<String> = top
+                .iter()
+                .take(2)
+                .map(|(url, bytes)| {
+                    format!(
+                        "{} ({})",
+                        url_filename(url),
+                        humansize::format_size(*bytes, humansize::BINARY)
+                    )
+                })
+                .collect();
+            if !contributors.is_empty() {
+                detail.push_str(" — ");
+                detail.push_str(&contributors.join(", "));
+            }
             vios.push(Violation {
                 kind: ViolationKind::Bytes,
                 metric,
                 budget,
                 actual,
-                detail: format!(
-                    "{} over",
-                    humansize::format_size(
-                        actual.saturating_sub(budget),
-                        humansize::BINARY
-                    )
-                ),
+                detail,
             });
         }
     }
-    bytes_check(&mut violations, "html", totals.html_brotli, budget.preset.bytes.html);
-    bytes_check(&mut violations, "css", totals.css_bytes, budget.preset.bytes.css);
-    bytes_check(&mut violations, "js", totals.js_bytes, budget.preset.bytes.js);
-    bytes_check(&mut violations, "images", totals.image_bytes, budget.preset.bytes.images);
-    bytes_check(&mut violations, "fonts", totals.font_bytes, budget.preset.bytes.fonts);
-    bytes_check(&mut violations, "total", totals.total_bytes, budget.preset.bytes.total);
+    bytes_check(&mut violations, "html", totals.html_brotli, budget.preset.bytes.html, &[]);
+    bytes_check(&mut violations, "css", totals.css_bytes, budget.preset.bytes.css, &css_resources);
+    bytes_check(&mut violations, "js", totals.js_bytes, budget.preset.bytes.js, &js_resources);
+    bytes_check(&mut violations, "images", totals.image_bytes, budget.preset.bytes.images, &image_resources);
+    bytes_check(&mut violations, "fonts", totals.font_bytes, budget.preset.bytes.fonts, &font_resources);
+    bytes_check(&mut violations, "total", totals.total_bytes, budget.preset.bytes.total, &[]);
 
     // Count budgets.
     fn count_check(vios: &mut Vec<Violation>, metric: &'static str, actual: u32, budget: u32) {
@@ -222,16 +263,16 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     let forbidden = ForbiddenMatcher::new();
     let mut flagged_urls: HashSet<String> = HashSet::new();
     let check = |vios: &mut Vec<Violation>, u: &str, flagged: &mut HashSet<String>| {
-        if let Some((pat, reason)) = forbidden.find(u) {
-            if flagged.insert(pat.to_string()) {
-                vios.push(Violation {
-                    kind: ViolationKind::Forbidden,
-                    metric: "forbidden",
-                    budget: 0,
-                    actual: 1,
-                    detail: format!("{pat} — {reason}"),
-                });
-            }
+        if let Some((pat, reason)) = forbidden.find(u)
+            && flagged.insert(pat.to_string())
+        {
+            vios.push(Violation {
+                kind: ViolationKind::Forbidden,
+                metric: "forbidden",
+                budget: 0,
+                actual: 1,
+                detail: format!("{pat} — {reason}"),
+            });
         }
     };
     for f in &fetched {
@@ -303,6 +344,24 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
         totals,
         violations,
     })
+}
+
+/// Returns the last non-empty path segment of a URL, falling back to the host.
+/// Used to produce short contributor labels in byte-budget violation details.
+fn url_filename(url: &str) -> String {
+    if let Ok(u) = Url::parse(url) {
+        let seg = u
+            .path_segments()
+            .and_then(|mut segs| segs.rfind(|s| !s.is_empty()))
+            .unwrap_or("");
+        if !seg.is_empty() {
+            return seg.to_string();
+        }
+        if let Some(host) = u.host_str() {
+            return host.to_string();
+        }
+    }
+    url.to_string()
 }
 
 /// Naive eTLD+1 for third-party comparison. Falls short on `.co.uk` etc., but
