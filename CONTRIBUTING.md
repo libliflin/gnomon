@@ -51,15 +51,10 @@ If the discovery algorithm points you to either of these fields, this is the exp
 
 ### When the scan returns empty
 
-If every `HtmlAnalysis` field is already covered or intentionally informational, the scan returns nothing. That does not mean the project is complete — it means the next check has not been added as a field yet. PLAN.md §4 lists anti-theater detections planned for static-HTML mode. One that is checkable from the HTML document alone, with no browser or JavaScript execution required:
+If every `HtmlAnalysis` field is already covered or intentionally informational, the scan returns nothing. That does not mean the project is complete — it means the next check has not been added as a field yet. PLAN.md §4 lists anti-theater detections planned for static-HTML mode.
 
-**`<link rel="preload" as="font">` without `crossorigin`**
+The currently implemented static-HTML checks are: `lazy_lcp_candidate`, `has_viewport_meta`, `has_charset_meta`, `img_missing_dimensions`, `has_speculation_prerender`, `picture_missing_modern_source`, `preload_font_no_crossorigin`. All fields in `HtmlAnalysis` are either wired violations or intentionally informational (see above).
 
-Font preloads without the `crossorigin` attribute are silently ignored by the browser. The font is fetched twice: once for the (discarded) preload, once for the actual use. The preload hint costs a connection slot and delivers nothing. Detectable from the HTML alone.
-
-- Field name: `preload_font_no_crossorigin: u32` (count of font preloads missing the attribute)
-- Detection: in `analyze_html`, find `<link rel="preload" as="font">` elements without a `crossorigin` attribute. The `rel` attribute may be `"preload"` or contain it in a space-separated list; check `.attr("crossorigin").is_none()`.
-- Violation detail: `"N font preload(s) missing crossorigin — browser ignores the hint, font fetched twice"`
-- Test template: copy `img_missing_both_dimensions_is_counted` in `src/analyze.rs` for detection; copy `theater_violations_img_missing_dimensions_fires` in `src/audit.rs` for the violation branch.
+The next contribution requires adding a new field. Read PLAN.md §4 for the full list of planned anti-theater detections. When picking one, ask: can this be detected from the HTML document alone, without JavaScript execution or a browser? If yes, it is a candidate. If no, it belongs in the future `--measure` path (headless Chromium) — do not add `HtmlAnalysis` fields for those.
 
 **What is NOT feasible in static mode:** PLAN.md §4 items that require JavaScript execution or a browser — hidden-until-interaction payloads, client-side-rendered shells, service workers, hydration timing — cannot be checked from HTML alone. They require the future `--measure` flag (headless Chromium). Do not add `HtmlAnalysis` fields for these; they belong in the measured-vitals path.
