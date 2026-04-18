@@ -262,17 +262,12 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
                 .filter(|r| r.render_blocking)
                 .map(|r| url_filename(&r.url))
                 .collect();
-            let mut detail = format!("{} over", actual - bgt);
-            if !blocking_names.is_empty() {
-                detail.push_str(" — ");
-                detail.push_str(&blocking_names.join(", "));
-            }
             violations.push(Violation {
                 kind: ViolationKind::Count,
                 metric: "render_blocking",
                 budget: bgt as u64,
                 actual: actual as u64,
-                detail,
+                detail: render_blocking_detail(actual - bgt, &blocking_names),
             });
         }
     }
@@ -365,6 +360,17 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     })
 }
 
+/// Formats the detail string for a render_blocking count violation.
+/// `over` is `actual - budget`; `names` are the blocking resource filenames.
+fn render_blocking_detail(over: u32, names: &[String]) -> String {
+    let mut s = format!("{over} over");
+    if !names.is_empty() {
+        s.push_str(" — ");
+        s.push_str(&names.join(", "));
+    }
+    s
+}
+
 /// Returns the last non-empty path segment of a URL, falling back to the host.
 /// Used to produce short contributor labels in byte-budget violation details.
 fn url_filename(url: &str) -> String {
@@ -396,4 +402,112 @@ fn registrable_domain(host: &str) -> String {
     }
     let n = parts.len();
     format!("{}.{}", parts[n - 2], parts[n - 1]).to_ascii_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- url_filename ----
+
+    #[test]
+    fn url_filename_returns_last_path_segment() {
+        assert_eq!(
+            url_filename("https://cdn.example.com/js/landingprod.js"),
+            "landingprod.js"
+        );
+    }
+
+    #[test]
+    fn url_filename_strips_query_string_from_segment() {
+        // ?v=123 must not leak into the filename label.
+        assert_eq!(
+            url_filename("https://cdn.example.com/app.js?v=abc"),
+            "app.js"
+        );
+    }
+
+    #[test]
+    fn url_filename_falls_back_to_host_on_trailing_slash() {
+        assert_eq!(
+            url_filename("https://cdn.example.com/"),
+            "cdn.example.com"
+        );
+    }
+
+    #[test]
+    fn url_filename_falls_back_to_host_on_no_path() {
+        assert_eq!(url_filename("https://cdn.example.com"), "cdn.example.com");
+    }
+
+    #[test]
+    fn url_filename_returns_bare_filename() {
+        assert_eq!(
+            url_filename("https://cdn.example.com/main.css"),
+            "main.css"
+        );
+    }
+
+    // ---- registrable_domain ----
+
+    #[test]
+    fn registrable_domain_extracts_last_two_labels() {
+        assert_eq!(registrable_domain("cdn.example.com"), "example.com");
+    }
+
+    #[test]
+    fn registrable_domain_returns_host_when_two_labels() {
+        assert_eq!(registrable_domain("example.com"), "example.com");
+    }
+
+    #[test]
+    fn registrable_domain_returns_host_when_single_label() {
+        assert_eq!(registrable_domain("localhost"), "localhost");
+    }
+
+    #[test]
+    fn registrable_domain_returns_empty_for_empty_input() {
+        assert_eq!(registrable_domain(""), "");
+    }
+
+    #[test]
+    fn registrable_domain_lowercases_result() {
+        assert_eq!(registrable_domain("CDN.Example.COM"), "example.com");
+    }
+
+    // ---- render_blocking_detail ----
+
+    #[test]
+    fn render_blocking_detail_no_names() {
+        // When blocking resource names are unavailable the detail still shows the count.
+        assert_eq!(render_blocking_detail(1, &[]), "1 over");
+    }
+
+    #[test]
+    fn render_blocking_detail_single_name() {
+        let names = vec!["landingprod.js".to_string()];
+        assert_eq!(
+            render_blocking_detail(1, &names),
+            "1 over — landingprod.js"
+        );
+    }
+
+    #[test]
+    fn render_blocking_detail_multiple_names() {
+        let names = vec!["main.css".to_string(), "analytics.js".to_string()];
+        assert_eq!(
+            render_blocking_detail(2, &names),
+            "2 over — main.css, analytics.js"
+        );
+    }
+
+    #[test]
+    fn render_blocking_detail_over_count_reflects_budget_delta() {
+        // Budget=1, actual=3 → over=2.
+        let names = vec!["a.css".to_string(), "b.css".to_string(), "c.js".to_string()];
+        assert_eq!(
+            render_blocking_detail(2, &names),
+            "2 over — a.css, b.css, c.js"
+        );
+    }
 }
