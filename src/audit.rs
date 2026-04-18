@@ -1171,4 +1171,22 @@ mod tests {
             "present charset meta must produce no violation"
         );
     }
+
+    #[test]
+    fn theater_violations_all_four_fire() {
+        let analysis = HtmlAnalysis {
+            lazy_lcp_candidate: true,
+            has_viewport_meta: false,
+            has_charset_meta: false,
+            img_missing_dimensions: 2,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 4, "all four theater checks must fire");
+        let metrics: Vec<&str> = vios.iter().map(|v| v.metric).collect();
+        assert!(metrics.contains(&"lazy_lcp"), "lazy_lcp must fire");
+        assert!(metrics.contains(&"viewport_meta"), "viewport_meta must fire");
+        assert!(metrics.contains(&"charset_meta"), "charset_meta must fire");
+        assert!(metrics.contains(&"img_dimensions"), "img_dimensions must fire");
+    }
 }
