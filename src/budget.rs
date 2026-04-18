@@ -104,7 +104,17 @@ pub fn mcmaster() -> Preset {
     }
 }
 
-/// TOML-on-disk form. Not all fields from PLAN.md are implemented yet (v0.0.2);
+/// One `[[allowlist]]` entry in gnomon.toml — a temporary budget relaxation.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AllowlistEntry {
+    metric: String,
+    budget: u64,
+    justification: String,
+    expires: String,
+}
+
+/// TOML-on-disk form. Not all fields from PLAN.md are implemented yet;
 /// unknown keys fail, per the fail-closed disposition.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -114,6 +124,102 @@ struct ConfigFile {
     bytes: Option<ByteBudget>,
     #[serde(default)]
     count: Option<CountBudget>,
+    #[serde(default)]
+    allowlist: Vec<AllowlistEntry>,
+}
+
+// Justification strings that look like placeholders — rejected at load time.
+const PLACEHOLDER_JUSTIFICATIONS: &[&str] =
+    &["", "todo", "temporary", "temp", "placeholder", "fixme", "tbd", "n/a", "wip"];
+
+fn validate_justification(metric: &str, s: &str) -> anyhow::Result<()> {
+    let lower = s.trim().to_lowercase();
+    if PLACEHOLDER_JUSTIFICATIONS.contains(&lower.as_str()) {
+        anyhow::bail!(
+            "gnomon: allowlist entry for {:?} has a placeholder justification {:?} — describe the reason and link a ticket",
+            metric,
+            s
+        );
+    }
+    Ok(())
+}
+
+fn validate_expires_format(metric: &str, s: &str) -> anyhow::Result<()> {
+    let b = s.as_bytes();
+    if b.len() != 10
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || !b[..4].iter().all(u8::is_ascii_digit)
+        || !b[5..7].iter().all(u8::is_ascii_digit)
+        || !b[8..].iter().all(u8::is_ascii_digit)
+    {
+        anyhow::bail!(
+            "gnomon: allowlist entry for {:?} has an invalid expires date {:?} — use YYYY-MM-DD format",
+            metric,
+            s
+        );
+    }
+    Ok(())
+}
+
+/// Returns today's date as `YYYY-MM-DD` using the Gregorian calendar algorithm
+/// from Howard Hinnant's date library (no external crate required).
+fn today_iso() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let n = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+        / 86400;
+    let z = n + 719468;
+    let era = if z >= 0 { z / 146097 } else { (z - 146096) / 146097 };
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+fn apply_allowlist(budget: &mut Budget, entries: &[AllowlistEntry]) -> anyhow::Result<()> {
+    let today = today_iso();
+    for entry in entries {
+        validate_justification(&entry.metric, &entry.justification)?;
+        validate_expires_format(&entry.metric, &entry.expires)?;
+
+        if today.as_str() > entry.expires.as_str() {
+            anyhow::bail!(
+                "gnomon: allowlist entry for {:?} expired on {} ({}) — tighten the budget or update the expiry",
+                entry.metric,
+                entry.expires,
+                entry.justification
+            );
+        }
+
+        match entry.metric.as_str() {
+            "html"                => budget.preset.bytes.html                        = entry.budget,
+            "css"                 => budget.preset.bytes.css                         = entry.budget,
+            "js"                  => budget.preset.bytes.js                          = entry.budget,
+            "images"              => budget.preset.bytes.images                      = entry.budget,
+            "bytes.fonts"         => budget.preset.bytes.fonts                       = entry.budget,
+            "total"               => budget.preset.bytes.total                       = entry.budget,
+            "requests"            => budget.preset.count.requests            = entry.budget as u32,
+            "third_party_domains" => budget.preset.count.third_party_domains = entry.budget as u32,
+            "render_blocking"     => budget.preset.count.render_blocking     = entry.budget as u32,
+            "count.fonts"         => budget.preset.count.fonts               = entry.budget as u32,
+            "fonts" => anyhow::bail!(
+                "gnomon: allowlist metric \"fonts\" is ambiguous — use \"bytes.fonts\" or \"count.fonts\""
+            ),
+            other => anyhow::bail!(
+                "gnomon: allowlist metric {:?} is not recognized — valid metrics: html, css, js, images, bytes.fonts, total, requests, third_party_domains, render_blocking, count.fonts",
+                other
+            ),
+        }
+    }
+    Ok(())
 }
 
 pub fn resolve_budget(
@@ -146,6 +252,8 @@ pub fn resolve_budget(
         if let Some(c) = cfg.count {
             budget.preset.count = c;
         }
+
+        apply_allowlist(&mut budget, &cfg.allowlist)?;
 
         Ok(budget)
     } else {
@@ -244,11 +352,20 @@ fn preset_toml(name: PresetName) -> String {
          render_blocking     = {crb:<4} {rb_c}\n\
          fonts               = {cfonts:<4} {fonts_c}\n\
          \n\
-         # NOTE (v0.0.2): allowlist justifications and per-route overrides are not yet\n\
-         # implemented. Adding [[allowlist]] or [routes.*] will fail with an\n\
-         # unknown-field error. To temporarily loosen a budget today: raise the number\n\
-         # above, explain the reason in your PR description, and link the ticket.\n\
-         # Justifications with expiries arrive in the next release.\n"
+         # To temporarily relax a budget, add an [[allowlist]] entry. gnomon will\n\
+         # fail the audit when the expiry passes or the justification is a placeholder.\n\
+         #\n\
+         # Example:\n\
+         #   [[allowlist]]\n\
+         #   metric        = \"third_party_domains\"\n\
+         #   budget        = 3\n\
+         #   justification = \"Analytics vendor — PERF-42 — replace by 2026-05-01\"\n\
+         #   expires       = \"2026-05-01\"\n\
+         #\n\
+         # Recognized metrics: html, css, js, images, bytes.fonts, total,\n\
+         #   requests, third_party_domains, render_blocking, count.fonts\n\
+         # Placeholder justifications (empty, \"TODO\", \"temporary\", etc.) are rejected.\n\
+         # Expired entries fail the audit with exit code 2.\n"
     )
 }
 
@@ -376,45 +493,54 @@ mod tests {
         );
     }
 
-    // ── v0.0.2 exception note ────────────────────────────────────────────────
+    // ── allowlist usage documentation ────────────────────────────────────────
 
     #[test]
-    fn preset_toml_closing_note_explains_allowlist_not_yet_implemented() {
-        // A developer who adds [[allowlist]] from PLAN.md §8 hits an unknown-field
-        // error with no guidance. This note must be present to turn that dead end
-        // into a clear next step.
+    fn preset_toml_closing_section_documents_allowlist_syntax() {
+        // The generated gnomon.toml must teach users how to use [[allowlist]].
+        // A budget owner who needs a temporary exception must find the syntax here.
         let out = preset_toml(PresetName::Insley);
         assert!(
-            out.contains("allowlist justifications and per-route overrides are not yet"),
-            "v0.0.2 note missing: {out}"
+            out.contains("To temporarily relax a budget, add an [[allowlist]] entry"),
+            "allowlist usage section missing: {out}"
         );
         assert!(
-            out.contains("unknown-field error"),
-            "note must name the error the developer will see: {out}"
+            out.contains("metric        = \"third_party_domains\""),
+            "allowlist example metric missing: {out}"
         );
         assert!(
-            out.contains("raise the number"),
-            "note must name the available workaround: {out}"
+            out.contains("justification ="),
+            "allowlist justification field missing: {out}"
+        );
+        assert!(
+            out.contains("expires       ="),
+            "allowlist expires field missing: {out}"
+        );
+        assert!(
+            out.contains("Placeholder justifications"),
+            "rejection behavior not documented: {out}"
+        );
+        assert!(
+            out.contains("exit code 2"),
+            "exit code behavior not documented: {out}"
         );
     }
 
     #[test]
-    fn preset_toml_closing_note_appears_after_count_block() {
-        // The note must be at the end of the file, not mid-file. A refactor that
-        // accidentally hoists it into the [bytes] section would confuse the reader.
+    fn preset_toml_allowlist_docs_appear_after_count_block() {
+        // The allowlist docs must be at the end of the file, not mid-file.
         let out = preset_toml(PresetName::Insley);
-        let note_pos = out.find("# NOTE (v0.0.2)").expect("note not found");
+        let docs_pos = out.find("To temporarily relax a budget").expect("allowlist docs not found");
         let count_pos = out.find("[count]").expect("[count] block not found");
-        assert!(note_pos > count_pos, "note must appear after [count] block, not mid-file");
+        assert!(docs_pos > count_pos, "allowlist docs must appear after [count] block, not mid-file");
     }
 
     #[test]
-    fn preset_toml_closing_note_present_for_mcmaster() {
-        // Pin the note for mcmaster — the preset in the cycle's journey (Maya's team).
+    fn preset_toml_allowlist_docs_present_for_mcmaster() {
         let out = preset_toml(PresetName::Mcmaster);
         assert!(
-            out.contains("# NOTE (v0.0.2)"),
-            "v0.0.2 note missing from mcmaster preset: {out}"
+            out.contains("To temporarily relax a budget"),
+            "allowlist usage docs missing from mcmaster preset: {out}"
         );
     }
 
@@ -531,5 +657,229 @@ mod tests {
         let cfg: super::ConfigFile = toml::from_str(&toml_str)
             .expect("generated mcmaster TOML must parse cleanly");
         assert_eq!(cfg.preset, "mcmaster");
+    }
+
+    // ── today_iso ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn today_iso_returns_yyyy_mm_dd_format() {
+        let d = super::today_iso();
+        assert_eq!(d.len(), 10, "today_iso must be 10 chars: {d}");
+        assert_eq!(d.as_bytes()[4], b'-', "expected dash at pos 4: {d}");
+        assert_eq!(d.as_bytes()[7], b'-', "expected dash at pos 7: {d}");
+        assert!(d[..4].chars().all(|c| c.is_ascii_digit()), "year must be digits: {d}");
+        assert!(d[5..7].chars().all(|c| c.is_ascii_digit()), "month must be digits: {d}");
+        assert!(d[8..].chars().all(|c| c.is_ascii_digit()), "day must be digits: {d}");
+        // Should be in a plausible range for a real clock
+        assert!(d.as_str() >= "2026-01-01", "date should not be before 2026: {d}");
+    }
+
+    // ── allowlist: validation ─────────────────────────────────────────────────
+
+    #[test]
+    fn allowlist_placeholder_justification_todo_is_rejected() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 5,
+            justification: "TODO".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("placeholder justification"), "wrong error: {msg}");
+        assert!(msg.contains("third_party_domains"), "metric name missing from error: {msg}");
+    }
+
+    #[test]
+    fn allowlist_empty_justification_is_rejected() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 5,
+            justification: "".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        assert!(err.to_string().contains("placeholder justification"));
+    }
+
+    #[test]
+    fn allowlist_temporary_justification_is_rejected() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "render_blocking".to_string(),
+            budget: 3,
+            justification: "temporary".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        assert!(err.to_string().contains("placeholder justification"));
+    }
+
+    #[test]
+    fn allowlist_invalid_expires_format_is_rejected() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 3,
+            justification: "Analytics vendor — PERF-42".to_string(),
+            expires: "01/01/2099".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("invalid expires date"), "wrong error: {msg}");
+        assert!(msg.contains("YYYY-MM-DD"), "format hint missing: {msg}");
+    }
+
+    #[test]
+    fn allowlist_expired_entry_fails_with_actionable_message() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 5,
+            justification: "Analytics vendor — PERF-42 — replace by 2020-01-01".to_string(),
+            expires: "2020-01-01".to_string(), // definitely in the past
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("expired on"), "wrong error: {msg}");
+        assert!(msg.contains("third_party_domains"), "metric missing: {msg}");
+        assert!(msg.contains("2020-01-01"), "expiry date missing: {msg}");
+        assert!(msg.contains("tighten the budget or update the expiry"), "action missing: {msg}");
+    }
+
+    #[test]
+    fn allowlist_unrecognized_metric_is_rejected() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "made_up_metric".to_string(),
+            budget: 5,
+            justification: "Real justification — PERF-99".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        assert!(err.to_string().contains("not recognized"), "wrong error: {err}");
+    }
+
+    #[test]
+    fn allowlist_ambiguous_fonts_metric_is_rejected() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "fonts".to_string(),
+            budget: 5,
+            justification: "Need more fonts — PERF-99".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("ambiguous"), "wrong error: {msg}");
+        assert!(msg.contains("bytes.fonts"), "disambiguation hint missing: {msg}");
+        assert!(msg.contains("count.fonts"), "disambiguation hint missing: {msg}");
+    }
+
+    // ── allowlist: budget application ─────────────────────────────────────────
+
+    #[test]
+    fn allowlist_valid_entry_loosens_third_party_domains() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        assert_eq!(budget.preset.count.third_party_domains, 2);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 5,
+            justification: "Analytics vendor — PERF-42 — replace by 2099-01-01".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        super::apply_allowlist(&mut budget, &entries).unwrap();
+        assert_eq!(budget.preset.count.third_party_domains, 5);
+    }
+
+    #[test]
+    fn allowlist_valid_entry_loosens_css_bytes() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        assert_eq!(budget.preset.bytes.css, 20 * 1024);
+        let entries = vec![super::AllowlistEntry {
+            metric: "css".to_string(),
+            budget: 50 * 1024,
+            justification: "Legacy stylesheet migration — PERF-55 — replace by 2099-01-01".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        super::apply_allowlist(&mut budget, &entries).unwrap();
+        assert_eq!(budget.preset.bytes.css, 50 * 1024);
+    }
+
+    #[test]
+    fn allowlist_valid_entry_loosens_render_blocking() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        assert_eq!(budget.preset.count.render_blocking, 1);
+        let entries = vec![super::AllowlistEntry {
+            metric: "render_blocking".to_string(),
+            budget: 3,
+            justification: "Legacy CSS pipeline — PERF-60 — replace by 2099-01-01".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        super::apply_allowlist(&mut budget, &entries).unwrap();
+        assert_eq!(budget.preset.count.render_blocking, 3);
+    }
+
+    #[test]
+    fn allowlist_bytes_fonts_disambiguates_from_count_fonts() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let original_count_fonts = budget.preset.count.fonts;
+        let entries = vec![super::AllowlistEntry {
+            metric: "bytes.fonts".to_string(),
+            budget: 200 * 1024,
+            justification: "Brand fonts — PERF-70 — replace by 2099-01-01".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        super::apply_allowlist(&mut budget, &entries).unwrap();
+        assert_eq!(budget.preset.bytes.fonts, 200 * 1024);
+        // count.fonts must be unchanged
+        assert_eq!(budget.preset.count.fonts, original_count_fonts);
+    }
+
+    // ── allowlist: round-trip through TOML parser ─────────────────────────────
+
+    #[test]
+    fn gnomon_toml_with_allowlist_parses_and_applies() {
+        let toml_str = format!(
+            "{}\n\
+             [[allowlist]]\n\
+             metric        = \"third_party_domains\"\n\
+             budget        = 5\n\
+             justification = \"Analytics vendor — PERF-42 — replace by 2099-01-01\"\n\
+             expires       = \"2099-01-01\"\n",
+            preset_toml(PresetName::Mcmaster)
+        );
+        let cfg: super::ConfigFile = toml::from_str(&toml_str)
+            .expect("TOML with [[allowlist]] must parse cleanly");
+        assert_eq!(cfg.allowlist.len(), 1);
+        assert_eq!(cfg.allowlist[0].metric, "third_party_domains");
+        assert_eq!(cfg.allowlist[0].budget, 5);
+    }
+
+    #[test]
+    fn gnomon_toml_with_expired_allowlist_fails_resolve_budget() {
+        let _lock = CWD_LOCK.lock().unwrap();
+        let _cwd = CwdGuard::new();
+
+        let toml_str = format!(
+            "{}\n\
+             [[allowlist]]\n\
+             metric        = \"third_party_domains\"\n\
+             budget        = 5\n\
+             justification = \"Analytics vendor — PERF-42 — replace by 2020-01-01\"\n\
+             expires       = \"2020-01-01\"\n",
+            preset_toml(PresetName::Mcmaster)
+        );
+        let tmp = std::env::temp_dir().join("gnomon_test_expired_allowlist");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("gnomon.toml"), &toml_str).unwrap();
+
+        std::env::set_current_dir(&tmp).unwrap();
+        let result = resolve_budget(PresetName::Insley, None);
+        assert!(result.is_err(), "expired allowlist must fail resolve_budget");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("expired on"), "error must mention expiry: {msg}");
     }
 }
