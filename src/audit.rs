@@ -1552,4 +1552,14 @@ mod tests {
         ];
         assert_eq!(count_legacy_images(&fetched), 2);
     }
+
+    #[test]
+    fn count_legacy_images_excludes_missing_content_type() {
+        // A successfully-fetched resource with no Content-Type header must not be
+        // counted as legacy — unknown format ≠ legacy format. The filter normalises
+        // None to "" which matches no legacy type; this test pins that boundary so
+        // a future rewrite can't silently flip it to over-counting.
+        let fetched = vec![fetched_with_ct(None, None)];
+        assert_eq!(count_legacy_images(&fetched), 0);
+    }
 }
