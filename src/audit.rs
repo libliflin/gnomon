@@ -218,6 +218,7 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
                 actual: actual as u64,
                 detail: requests_count_detail(
                     actual - bgt,
+                    bgt,
                     actual,
                     &css_resources,
                     &js_resources,
@@ -236,7 +237,7 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
                 metric: "third_party_domains",
                 budget: bgt as u64,
                 actual: actual as u64,
-                detail: third_party_domains_detail(actual - bgt, &totals.third_party_list),
+                detail: third_party_domains_detail(actual - bgt, bgt, &totals.third_party_list),
             });
         }
     }
@@ -256,7 +257,7 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
                 metric: "render_blocking",
                 budget: bgt as u64,
                 actual: actual as u64,
-                detail: render_blocking_detail(actual - bgt, &blocking_names),
+                detail: render_blocking_detail(actual - bgt, bgt, &blocking_names),
             });
         }
     }
@@ -269,7 +270,7 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
                 metric: "fonts",
                 budget: bgt as u64,
                 actual: actual as u64,
-                detail: fonts_count_detail(actual - bgt, &font_resources),
+                detail: fonts_count_detail(actual - bgt, bgt, &font_resources),
             });
         }
     }
@@ -355,8 +356,9 @@ fn bytes_check(
 ) {
     if actual > budget {
         let mut detail = format!(
-            "{} over",
-            humansize::format_size(actual.saturating_sub(budget), humansize::BINARY)
+            "{} over {} budget",
+            humansize::format_size(actual.saturating_sub(budget), humansize::BINARY),
+            humansize::format_size(budget, humansize::BINARY)
         );
         let contributors: Vec<String> = top
             .iter()
@@ -385,8 +387,8 @@ fn bytes_check(
 
 /// Formats the detail string for a render_blocking count violation.
 /// `over` is `actual - budget`; `names` are the blocking resource filenames.
-fn render_blocking_detail(over: u32, names: &[String]) -> String {
-    let mut s = format!("{over} over");
+fn render_blocking_detail(over: u32, budget: u32, names: &[String]) -> String {
+    let mut s = format!("{over} over budget of {budget}");
     if !names.is_empty() {
         s.push_str(" — ");
         s.push_str(&names.join(", "));
@@ -395,8 +397,8 @@ fn render_blocking_detail(over: u32, names: &[String]) -> String {
 }
 
 /// Formats the detail string for a third_party_domains count violation.
-fn third_party_domains_detail(over: u32, domains: &[String]) -> String {
-    let mut s = format!("{over} over");
+fn third_party_domains_detail(over: u32, budget: u32, domains: &[String]) -> String {
+    let mut s = format!("{over} over budget of {budget}");
     if !domains.is_empty() {
         s.push_str(" — ");
         s.push_str(&domains.join(", "));
@@ -406,8 +408,8 @@ fn third_party_domains_detail(over: u32, domains: &[String]) -> String {
 
 /// Formats the detail string for a fonts count violation.
 /// Shows top-2 contributors with their brotli-compressed sizes.
-fn fonts_count_detail(over: u32, top: &[(String, u64)]) -> String {
-    let mut s = format!("{over} over");
+fn fonts_count_detail(over: u32, budget: u32, top: &[(String, u64)]) -> String {
+    let mut s = format!("{over} over budget of {budget}");
     let contributors: Vec<String> = top
         .iter()
         .take(2)
@@ -432,6 +434,7 @@ fn fonts_count_detail(over: u32, top: &[(String, u64)]) -> String {
 /// from type counts — they contribute to totals but are not discrete requests.
 fn requests_count_detail(
     over: u32,
+    budget: u32,
     total: u32,
     css: &[(String, u64)],
     js: &[(String, u64)],
@@ -453,7 +456,7 @@ fn requests_count_detail(
         .map(|&(label, n)| format!("{n} {label}"))
         .collect();
 
-    let mut s = format!("{over} over");
+    let mut s = format!("{over} over budget of {budget}");
     if !parts.is_empty() {
         s.push_str(" — ");
         s.push_str(&parts.join(", "));
@@ -608,16 +611,16 @@ mod tests {
 
     #[test]
     fn render_blocking_detail_no_names() {
-        // When blocking resource names are unavailable the detail still shows the count.
-        assert_eq!(render_blocking_detail(1, &[]), "1 over");
+        // When blocking resource names are unavailable the detail still shows the count and budget.
+        assert_eq!(render_blocking_detail(1, 0, &[]), "1 over budget of 0");
     }
 
     #[test]
     fn render_blocking_detail_single_name() {
         let names = vec!["landingprod.js".to_string()];
         assert_eq!(
-            render_blocking_detail(1, &names),
-            "1 over — landingprod.js"
+            render_blocking_detail(1, 0, &names),
+            "1 over budget of 0 — landingprod.js"
         );
     }
 
@@ -625,8 +628,8 @@ mod tests {
     fn render_blocking_detail_multiple_names() {
         let names = vec!["main.css".to_string(), "analytics.js".to_string()];
         assert_eq!(
-            render_blocking_detail(2, &names),
-            "2 over — main.css, analytics.js"
+            render_blocking_detail(2, 0, &names),
+            "2 over budget of 0 — main.css, analytics.js"
         );
     }
 
@@ -635,8 +638,8 @@ mod tests {
         // Budget=1, actual=3 → over=2.
         let names = vec!["a.css".to_string(), "b.css".to_string(), "c.js".to_string()];
         assert_eq!(
-            render_blocking_detail(2, &names),
-            "2 over — a.css, b.css, c.js"
+            render_blocking_detail(2, 1, &names),
+            "2 over budget of 1 — a.css, b.css, c.js"
         );
     }
 
@@ -644,15 +647,15 @@ mod tests {
 
     #[test]
     fn third_party_domains_detail_no_domains() {
-        assert_eq!(third_party_domains_detail(1, &[]), "1 over");
+        assert_eq!(third_party_domains_detail(1, 0, &[]), "1 over budget of 0");
     }
 
     #[test]
     fn third_party_domains_detail_single_domain() {
         let domains = vec!["google-analytics.com".to_string()];
         assert_eq!(
-            third_party_domains_detail(1, &domains),
-            "1 over — google-analytics.com"
+            third_party_domains_detail(1, 0, &domains),
+            "1 over budget of 0 — google-analytics.com"
         );
     }
 
@@ -664,8 +667,8 @@ mod tests {
             "googlesyndication.com".to_string(),
         ];
         assert_eq!(
-            third_party_domains_detail(2, &domains),
-            "2 over — doubleclick.net, google-analytics.com, googlesyndication.com"
+            third_party_domains_detail(2, 1, &domains),
+            "2 over budget of 1 — doubleclick.net, google-analytics.com, googlesyndication.com"
         );
     }
 
@@ -673,15 +676,15 @@ mod tests {
 
     #[test]
     fn fonts_count_detail_no_fonts() {
-        assert_eq!(fonts_count_detail(1, &[]), "1 over");
+        assert_eq!(fonts_count_detail(1, 0, &[]), "1 over budget of 0");
     }
 
     #[test]
     fn fonts_count_detail_single_font() {
         let fonts = vec![("https://cdn.example.com/serif-regular.woff2".to_string(), 46080u64)];
         assert_eq!(
-            fonts_count_detail(1, &fonts),
-            "1 over — serif-regular.woff2 (45 KiB)"
+            fonts_count_detail(1, 0, &fonts),
+            "1 over budget of 0 — serif-regular.woff2 (45 KiB)"
         );
     }
 
@@ -693,8 +696,8 @@ mod tests {
             ("https://cdn.example.com/sans-regular.woff2".to_string(), 12288u64),
         ];
         assert_eq!(
-            fonts_count_detail(1, &fonts),
-            "1 over — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
+            fonts_count_detail(1, 0, &fonts),
+            "1 over budget of 0 — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
         );
     }
 
@@ -707,8 +710,8 @@ mod tests {
         ];
         // Only top 2 contributors shown even when 3 fonts are present.
         assert_eq!(
-            fonts_count_detail(1, &fonts),
-            "1 over — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
+            fonts_count_detail(1, 0, &fonts),
+            "1 over budget of 0 — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
         );
     }
 
@@ -842,8 +845,8 @@ mod tests {
             "googlesyndication.com".to_string(),
         ];
         assert_eq!(
-            third_party_domains_detail(2, &domains),
-            "2 over — google-analytics.com, googletagservices.com, googlesyndication.com"
+            third_party_domains_detail(2, 1, &domains),
+            "2 over budget of 1 — google-analytics.com, googletagservices.com, googlesyndication.com"
         );
     }
 
@@ -865,25 +868,25 @@ mod tests {
         ];
         let images = vec![make_res("a.png", 100), make_res("b.png", 200)];
         let fonts = vec![make_res("a.woff2", 100)];
-        // total = 1 html + 4 js + 2 css + 2 img + 1 font = 10
-        let detail = requests_count_detail(4, 10, &css, &js, &images, &fonts);
-        assert_eq!(detail, "4 over — 4 js, 2 css, 2 img, 1 font (10 total)");
+        // total = 1 html + 4 js + 2 css + 2 img + 1 font = 10; budget = 6
+        let detail = requests_count_detail(4, 6, 10, &css, &js, &images, &fonts);
+        assert_eq!(detail, "4 over budget of 6 — 4 js, 2 css, 2 img, 1 font (10 total)");
     }
 
     #[test]
     fn requests_count_detail_zero_omission() {
         // Only JS resources; no CSS, images, or fonts. Zeros must not appear.
         let js = vec![make_res("a.js", 100), make_res("b.js", 200)];
-        let detail = requests_count_detail(1, 3, &[], &js, &[], &[]);
-        assert_eq!(detail, "1 over — 2 js (3 total)");
+        let detail = requests_count_detail(1, 2, 3, &[], &js, &[], &[]);
+        assert_eq!(detail, "1 over budget of 2 — 2 js (3 total)");
     }
 
     #[test]
     fn requests_count_detail_single_type() {
         // Only CSS; one resource over budget.
         let css = vec![make_res("main.css", 50_000)];
-        let detail = requests_count_detail(1, 2, &css, &[], &[], &[]);
-        assert_eq!(detail, "1 over — 1 css (2 total)");
+        let detail = requests_count_detail(1, 1, 2, &css, &[], &[], &[]);
+        assert_eq!(detail, "1 over budget of 1 — 1 css (2 total)");
     }
 
     #[test]
@@ -895,15 +898,15 @@ mod tests {
             make_res("(inline <script>)", 20_000),
         ];
         // actual = 1 html + 1 external js = 2; inline is not a request
-        let detail = requests_count_detail(1, 2, &[], &js, &[], &[]);
-        assert_eq!(detail, "1 over — 1 js (2 total)");
+        let detail = requests_count_detail(1, 1, 2, &[], &js, &[], &[]);
+        assert_eq!(detail, "1 over budget of 1 — 1 js (2 total)");
     }
 
     #[test]
     fn requests_count_detail_no_typed_resources() {
         // All requests are HTML/other (unclassified). No named types, but total still shown.
-        let detail = requests_count_detail(2, 5, &[], &[], &[], &[]);
-        assert_eq!(detail, "2 over (5 total)");
+        let detail = requests_count_detail(2, 3, 5, &[], &[], &[], &[]);
+        assert_eq!(detail, "2 over budget of 3 (5 total)");
     }
 
     #[test]
@@ -913,8 +916,8 @@ mod tests {
             make_res("https://cdn.example.com/main.css", 30_000),
             make_res("(inline <style>)", 15_000),
         ];
-        let detail = requests_count_detail(1, 2, &css, &[], &[], &[]);
-        assert_eq!(detail, "1 over — 1 css (2 total)");
+        let detail = requests_count_detail(1, 1, 2, &css, &[], &[], &[]);
+        assert_eq!(detail, "1 over budget of 1 — 1 css (2 total)");
     }
 
     #[test]
@@ -922,16 +925,16 @@ mod tests {
         // CSS list contains only a synthetic inline entry (no external CSS file).
         // Inline entries must not count as requests, so css must not appear in the breakdown.
         let css = vec![make_res("(inline <style>)", 50_000)];
-        let detail = requests_count_detail(1, 2, &css, &[], &[], &[]);
-        assert_eq!(detail, "1 over (2 total)");
+        let detail = requests_count_detail(1, 1, 2, &css, &[], &[], &[]);
+        assert_eq!(detail, "1 over budget of 1 (2 total)");
     }
 
     #[test]
     fn requests_count_detail_inline_only_js() {
         // JS list contains only a synthetic inline entry (no external JS file).
         let js = vec![make_res("(inline <script>)", 50_000)];
-        let detail = requests_count_detail(1, 2, &[], &js, &[], &[]);
-        assert_eq!(detail, "1 over (2 total)");
+        let detail = requests_count_detail(1, 1, 2, &[], &js, &[], &[]);
+        assert_eq!(detail, "1 over budget of 1 (2 total)");
     }
 
     #[test]
@@ -940,8 +943,8 @@ mod tests {
         // "css" < "img" alphabetically, so css must appear first on a tie.
         let css = vec![make_res("a.css", 100), make_res("b.css", 200)];
         let images = vec![make_res("a.png", 100), make_res("b.png", 200)];
-        let detail = requests_count_detail(3, 5, &css, &[], &images, &[]);
-        assert_eq!(detail, "3 over — 2 css, 2 img (5 total)");
+        let detail = requests_count_detail(3, 2, 5, &css, &[], &images, &[]);
+        assert_eq!(detail, "3 over budget of 2 — 2 css, 2 img (5 total)");
     }
 
     // ---- theater_violations ----
