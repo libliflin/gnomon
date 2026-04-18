@@ -503,6 +503,18 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
             detail: "missing <meta name=\"viewport\">".into(),
         });
     }
+    if analysis.img_missing_dimensions > 0 {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "img_dimensions",
+            budget: 0,
+            actual: analysis.img_missing_dimensions as u64,
+            detail: format!(
+                "{} <img> element(s) missing explicit width/height — layout shift (CLS)",
+                analysis.img_missing_dimensions
+            ),
+        });
+    }
     vios
 }
 
@@ -993,5 +1005,49 @@ mod tests {
         let metrics: Vec<&str> = vios.iter().map(|v| v.metric).collect();
         assert!(metrics.contains(&"lazy_lcp"), "lazy_lcp must be present");
         assert!(metrics.contains(&"viewport_meta"), "viewport_meta must be present");
+    }
+
+    #[test]
+    fn theater_violations_img_missing_dimensions_fires() {
+        let analysis = HtmlAnalysis {
+            img_missing_dimensions: 3,
+            has_viewport_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "img_dimensions");
+        assert_eq!(vios[0].kind, ViolationKind::Theater);
+        assert_eq!(vios[0].actual, 3);
+        assert!(
+            vios[0].detail.contains("layout shift"),
+            "detail must mention layout shift: {}",
+            vios[0].detail
+        );
+    }
+
+    #[test]
+    fn theater_violations_img_dimensions_zero_no_violation() {
+        let analysis = HtmlAnalysis {
+            img_missing_dimensions: 0,
+            has_viewport_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        let img_vios: Vec<_> = vios.iter().filter(|v| v.metric == "img_dimensions").collect();
+        assert!(img_vios.is_empty(), "zero missing dimensions must produce no violation");
+    }
+
+    #[test]
+    fn theater_violations_img_dimensions_single_element() {
+        let analysis = HtmlAnalysis {
+            img_missing_dimensions: 1,
+            has_viewport_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "img_dimensions");
+        assert_eq!(vios[0].actual, 1);
     }
 }
