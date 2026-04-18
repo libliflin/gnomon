@@ -686,9 +686,11 @@ mod tests {
             expires: "2099-01-01".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("placeholder justification"), "wrong error: {msg}");
-        assert!(msg.contains("third_party_domains"), "metric name missing from error: {msg}");
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"third_party_domains\" has a placeholder justification \
+             \"TODO\" — describe the reason and link a ticket"
+        );
     }
 
     #[test]
@@ -701,7 +703,11 @@ mod tests {
             expires: "2099-01-01".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        assert!(err.to_string().contains("placeholder justification"));
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"third_party_domains\" has a placeholder justification \
+             \"\" — describe the reason and link a ticket"
+        );
     }
 
     #[test]
@@ -714,7 +720,11 @@ mod tests {
             expires: "2099-01-01".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        assert!(err.to_string().contains("placeholder justification"));
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"render_blocking\" has a placeholder justification \
+             \"temporary\" — describe the reason and link a ticket"
+        );
     }
 
     #[test]
@@ -727,9 +737,11 @@ mod tests {
             expires: "01/01/2099".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("invalid expires date"), "wrong error: {msg}");
-        assert!(msg.contains("YYYY-MM-DD"), "format hint missing: {msg}");
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"third_party_domains\" has an invalid expires date \
+             \"01/01/2099\" — use YYYY-MM-DD format"
+        );
     }
 
     #[test]
@@ -742,11 +754,12 @@ mod tests {
             expires: "2020-01-01".to_string(), // definitely in the past
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("expired on"), "wrong error: {msg}");
-        assert!(msg.contains("third_party_domains"), "metric missing: {msg}");
-        assert!(msg.contains("2020-01-01"), "expiry date missing: {msg}");
-        assert!(msg.contains("tighten the budget or update the expiry"), "action missing: {msg}");
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"third_party_domains\" expired on 2020-01-01 \
+             (Analytics vendor — PERF-42 — replace by 2020-01-01) \
+             — tighten the budget or update the expiry"
+        );
     }
 
     #[test]
@@ -759,7 +772,12 @@ mod tests {
             expires: "2099-01-01".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        assert!(err.to_string().contains("not recognized"), "wrong error: {err}");
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist metric \"made_up_metric\" is not recognized — valid metrics: \
+             html, css, js, images, bytes.fonts, total, requests, third_party_domains, \
+             render_blocking, count.fonts"
+        );
     }
 
     #[test]
@@ -772,10 +790,10 @@ mod tests {
             expires: "2099-01-01".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("ambiguous"), "wrong error: {msg}");
-        assert!(msg.contains("bytes.fonts"), "disambiguation hint missing: {msg}");
-        assert!(msg.contains("count.fonts"), "disambiguation hint missing: {msg}");
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist metric \"fonts\" is ambiguous — use \"bytes.fonts\" or \"count.fonts\""
+        );
     }
 
     // ── allowlist: budget application ─────────────────────────────────────────
@@ -926,7 +944,11 @@ mod tests {
             expires: "2099-01-01".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        assert!(err.to_string().contains("placeholder justification"));
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"third_party_domains\" has a placeholder justification \
+             \"  TODO  \" — describe the reason and link a ticket"
+        );
     }
 
     #[test]
@@ -1022,6 +1044,11 @@ mod tests {
         let result = resolve_budget(PresetName::Insley, None);
         assert!(result.is_err(), "expired allowlist must fail resolve_budget");
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("expired on"), "error must mention expiry: {msg}");
+        assert_eq!(
+            msg,
+            "gnomon: allowlist entry for \"third_party_domains\" expired on 2020-01-01 \
+             (Analytics vendor — PERF-42 — replace by 2020-01-01) \
+             — tighten the budget or update the expiry"
+        );
     }
 }
