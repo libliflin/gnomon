@@ -64,4 +64,6 @@ pub struct BudgetInitArgs {
 pub enum OutputFormat {
     Human,
     Json,
+    /// SARIF 2.1.0 — upload to GitHub code scanning via upload-sarif action.
+    Sarif,
 }
