@@ -725,6 +725,49 @@ mod tests {
     }
 
     #[test]
+    fn js_mixed_inline_large_enough_to_rank_in_top_two() {
+        // External file: 10 KiB. Inline: 50 KiB. Budget: 0.
+        // Inline is larger → must appear in the top-2 contributor list.
+        let mut vios: Vec<Violation> = Vec::new();
+        let mut resources = vec![
+            ("https://cdn.example.com/small.js".to_string(), 10_240u64),
+            ("(inline <script>)".to_string(), 51_200u64),
+        ];
+        resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+        let total = 10_240 + 51_200;
+        bytes_check(&mut vios, "js", total, 0, &resources);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(
+            detail.contains("(inline <script>)"),
+            "inline contributor should appear in top-2, got: {detail}"
+        );
+    }
+
+    #[test]
+    fn js_mixed_inline_too_small_for_top_two() {
+        // Three resources: two large external JS files plus a tiny inline block.
+        // Inline is smaller than both external files → must not appear in top-2.
+        let mut vios: Vec<Violation> = Vec::new();
+        let mut resources = vec![
+            ("https://cdn.example.com/app.js".to_string(), 50_000u64),
+            ("https://cdn.example.com/vendor.js".to_string(), 40_000u64),
+            ("(inline <script>)".to_string(), 100u64),
+        ];
+        resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+        let total = 50_000 + 40_000 + 100;
+        bytes_check(&mut vios, "js", total, 0, &resources);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(
+            !detail.contains("(inline <script>)"),
+            "tiny inline contributor must not appear in top-2, got: {detail}"
+        );
+        assert!(detail.contains("app.js"), "app.js must be in top-2, got: {detail}");
+        assert!(detail.contains("vendor.js"), "vendor.js must be in top-2, got: {detail}");
+    }
+
+    #[test]
     fn third_party_domains_detail_over_count_differs_from_domain_count() {
         // budget=1, actual=3 → over=2, but all 3 domains are listed.
         // The "over" prefix reflects the budget delta; the domain list is exhaustive.
