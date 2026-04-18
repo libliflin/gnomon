@@ -1004,6 +1004,16 @@ mod tests {
         assert_eq!(detail, "3 over budget of 2 — 2 css, 2 img (5 total)");
     }
 
+    #[test]
+    fn requests_count_detail_zero_budget() {
+        // Insley preset: requests = 0 (no budget). Any nonzero actual produces
+        // "N over budget of 0 — ..." — pins the zero-budget rendering path that
+        // the other count detail functions all test but this one did not.
+        let js = vec![make_res("https://cdn.example.com/app.js", 40_000)];
+        let detail = requests_count_detail(2, 0, 2, &[], &js, &[], &[]);
+        assert_eq!(detail, "2 over budget of 0 — 1 js (2 total)");
+    }
+
     // ---- theater_violations ----
 
     #[test]
