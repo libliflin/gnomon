@@ -1302,6 +1302,10 @@ mod tests {
         assert_eq!(vios.len(), 1);
         assert_eq!(vios[0].metric, "img_dimensions");
         assert_eq!(vios[0].actual, 1);
+        assert_eq!(
+            vios[0].detail,
+            "1 <img> element(s) missing explicit width/height — layout shift (CLS)"
+        );
     }
 
     #[test]
