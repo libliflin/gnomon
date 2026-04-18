@@ -59,3 +59,56 @@ impl Default for ForbiddenMatcher {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_url_matches_with_correct_tuple() {
+        let m = ForbiddenMatcher::new();
+        let result = m.find("https://fonts.googleapis.com/css2?family=Roboto");
+        assert_eq!(
+            result,
+            Some((
+                "fonts.googleapis.com",
+                "Google Fonts — self-host and subset your fonts"
+            ))
+        );
+    }
+
+    #[test]
+    fn clean_url_returns_none() {
+        let m = ForbiddenMatcher::new();
+        assert_eq!(m.find("https://example.com/styles/main.css"), None);
+    }
+
+    #[test]
+    fn matching_is_case_insensitive() {
+        let m = ForbiddenMatcher::new();
+        let result = m.find("https://FONTS.GOOGLEAPIS.COM/css2?family=Roboto");
+        assert!(result.is_some(), "uppercase hostname must still match");
+    }
+
+    #[test]
+    fn pattern_is_substring_not_equality() {
+        let m = ForbiddenMatcher::new();
+        // The URL is much longer than the pattern — substring match must fire
+        let result = m.find(
+            "https://doubleclick.net/pagead/viewthroughconversion/123/?value=0&label=abc&guid=ON",
+        );
+        assert!(result.is_some(), "pattern must match anywhere in the URL");
+        assert_eq!(result.unwrap().0, "doubleclick.net");
+    }
+
+    #[test]
+    fn multiple_distinct_entries_each_match() {
+        let m = ForbiddenMatcher::new();
+
+        let gtm = m.find("https://www.googletagmanager.com/gtm.js?id=GTM-XXXX");
+        assert_eq!(gtm.map(|(p, _)| p), Some("googletagmanager.com/gtm.js"));
+
+        let dc = m.find("https://ad.doubleclick.net/ddm/trackclk/N123456");
+        assert_eq!(dc.map(|(p, _)| p), Some("doubleclick.net"));
+    }
+}
