@@ -309,24 +309,7 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     }
 
     // Anti-theater.
-    if analysis.lazy_lcp_candidate {
-        violations.push(Violation {
-            kind: ViolationKind::Theater,
-            metric: "lazy_lcp",
-            budget: 0,
-            actual: 1,
-            detail: "first <img> has loading=\"lazy\" — likely LCP gaming".into(),
-        });
-    }
-    if !analysis.has_viewport_meta {
-        violations.push(Violation {
-            kind: ViolationKind::Theater,
-            metric: "viewport_meta",
-            budget: 0,
-            actual: 1,
-            detail: "missing <meta name=\"viewport\">".into(),
-        });
-    }
+    violations.extend(theater_violations(&analysis));
 
     // Fetch errors.
     let mut errored_urls: Vec<String> = Vec::new();
@@ -495,6 +478,32 @@ fn url_filename(url: &str) -> String {
         }
     }
     url.to_string()
+}
+
+/// Assembles anti-theater violations from the HTML analysis.
+/// Pure function — takes only `&HtmlAnalysis`, makes no network calls.
+/// New theater checks belong here: add a branch, add a test, done.
+fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
+    let mut vios = Vec::new();
+    if analysis.lazy_lcp_candidate {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "lazy_lcp",
+            budget: 0,
+            actual: 1,
+            detail: "first <img> has loading=\"lazy\" — likely LCP gaming".into(),
+        });
+    }
+    if !analysis.has_viewport_meta {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "viewport_meta",
+            budget: 0,
+            actual: 1,
+            detail: "missing <meta name=\"viewport\">".into(),
+        });
+    }
+    vios
 }
 
 /// Naive eTLD+1 for third-party comparison. Falls short on `.co.uk` etc., but
@@ -921,5 +930,68 @@ mod tests {
         let images = vec![make_res("a.png", 100), make_res("b.png", 200)];
         let detail = requests_count_detail(3, 5, &css, &[], &images, &[]);
         assert_eq!(detail, "3 over — 2 css, 2 img (5 total)");
+    }
+
+    // ---- theater_violations ----
+
+    #[test]
+    fn theater_violations_lazy_lcp_fires() {
+        let analysis = HtmlAnalysis {
+            lazy_lcp_candidate: true,
+            has_viewport_meta: true, // clean — only lazy_lcp should fire
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "lazy_lcp");
+        assert_eq!(vios[0].kind, ViolationKind::Theater);
+        assert!(
+            vios[0].detail.contains("LCP gaming"),
+            "detail should name LCP gaming, got: {}",
+            vios[0].detail
+        );
+    }
+
+    #[test]
+    fn theater_violations_missing_viewport_fires() {
+        let analysis = HtmlAnalysis {
+            lazy_lcp_candidate: false,
+            has_viewport_meta: false, // missing viewport — should fire
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "viewport_meta");
+        assert_eq!(vios[0].kind, ViolationKind::Theater);
+        assert!(
+            vios[0].detail.contains("viewport"),
+            "detail should mention viewport, got: {}",
+            vios[0].detail
+        );
+    }
+
+    #[test]
+    fn theater_violations_clean_page_returns_empty() {
+        let analysis = HtmlAnalysis {
+            lazy_lcp_candidate: false,
+            has_viewport_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert!(vios.is_empty(), "clean page must produce no theater violations");
+    }
+
+    #[test]
+    fn theater_violations_both_flags_emit_two_violations() {
+        let analysis = HtmlAnalysis {
+            lazy_lcp_candidate: true,
+            has_viewport_meta: false,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 2);
+        let metrics: Vec<&str> = vios.iter().map(|v| v.metric).collect();
+        assert!(metrics.contains(&"lazy_lcp"), "lazy_lcp must be present");
+        assert!(metrics.contains(&"viewport_meta"), "viewport_meta must be present");
     }
 }
