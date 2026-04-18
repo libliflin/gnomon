@@ -245,12 +245,19 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
         }
     }
     count_check(&mut violations, "requests", totals.requests, budget.preset.count.requests);
-    count_check(
-        &mut violations,
-        "third_party_domains",
-        totals.third_party_domains,
-        budget.preset.count.third_party_domains,
-    );
+    {
+        let actual = totals.third_party_domains;
+        let bgt = budget.preset.count.third_party_domains;
+        if actual > bgt {
+            violations.push(Violation {
+                kind: ViolationKind::Count,
+                metric: "third_party_domains",
+                budget: bgt as u64,
+                actual: actual as u64,
+                detail: third_party_domains_detail(actual - bgt, &totals.third_party_list),
+            });
+        }
+    }
     {
         let actual = totals.render_blocking;
         let bgt = budget.preset.count.render_blocking;
@@ -271,7 +278,19 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
             });
         }
     }
-    count_check(&mut violations, "fonts", totals.fonts_count, budget.preset.count.fonts);
+    {
+        let actual = totals.fonts_count;
+        let bgt = budget.preset.count.fonts;
+        if actual > bgt {
+            violations.push(Violation {
+                kind: ViolationKind::Count,
+                metric: "fonts",
+                budget: bgt as u64,
+                actual: actual as u64,
+                detail: fonts_count_detail(actual - bgt, &font_resources),
+            });
+        }
+    }
 
     // Forbidden list.
     let forbidden = ForbiddenMatcher::new();
@@ -367,6 +386,38 @@ fn render_blocking_detail(over: u32, names: &[String]) -> String {
     if !names.is_empty() {
         s.push_str(" — ");
         s.push_str(&names.join(", "));
+    }
+    s
+}
+
+/// Formats the detail string for a third_party_domains count violation.
+fn third_party_domains_detail(over: u32, domains: &[String]) -> String {
+    let mut s = format!("{over} over");
+    if !domains.is_empty() {
+        s.push_str(" — ");
+        s.push_str(&domains.join(", "));
+    }
+    s
+}
+
+/// Formats the detail string for a fonts count violation.
+/// Shows top-2 contributors with their brotli-compressed sizes.
+fn fonts_count_detail(over: u32, top: &[(String, u64)]) -> String {
+    let mut s = format!("{over} over");
+    let contributors: Vec<String> = top
+        .iter()
+        .take(2)
+        .map(|(url, bytes)| {
+            format!(
+                "{} ({})",
+                url_filename(url),
+                humansize::format_size(*bytes, humansize::BINARY)
+            )
+        })
+        .collect();
+    if !contributors.is_empty() {
+        s.push_str(" — ");
+        s.push_str(&contributors.join(", "));
     }
     s
 }
@@ -508,6 +559,65 @@ mod tests {
         assert_eq!(
             render_blocking_detail(2, &names),
             "2 over — a.css, b.css, c.js"
+        );
+    }
+
+    // ---- third_party_domains_detail ----
+
+    #[test]
+    fn third_party_domains_detail_no_domains() {
+        assert_eq!(third_party_domains_detail(1, &[]), "1 over");
+    }
+
+    #[test]
+    fn third_party_domains_detail_single_domain() {
+        let domains = vec!["google-analytics.com".to_string()];
+        assert_eq!(
+            third_party_domains_detail(1, &domains),
+            "1 over — google-analytics.com"
+        );
+    }
+
+    #[test]
+    fn third_party_domains_detail_multiple_domains() {
+        let domains = vec![
+            "doubleclick.net".to_string(),
+            "google-analytics.com".to_string(),
+            "googlesyndication.com".to_string(),
+        ];
+        assert_eq!(
+            third_party_domains_detail(2, &domains),
+            "2 over — doubleclick.net, google-analytics.com, googlesyndication.com"
+        );
+    }
+
+    // ---- fonts_count_detail ----
+
+    #[test]
+    fn fonts_count_detail_no_fonts() {
+        assert_eq!(fonts_count_detail(1, &[]), "1 over");
+    }
+
+    #[test]
+    fn fonts_count_detail_single_font() {
+        let fonts = vec![("https://cdn.example.com/serif-regular.woff2".to_string(), 46080u64)];
+        assert_eq!(
+            fonts_count_detail(1, &fonts),
+            "1 over — serif-regular.woff2 (45 KiB)"
+        );
+    }
+
+    #[test]
+    fn fonts_count_detail_top_two_shown() {
+        let fonts = vec![
+            ("https://cdn.example.com/serif-regular.woff2".to_string(), 46080u64),
+            ("https://cdn.example.com/sans-regular.woff2".to_string(), 12288u64),
+            ("https://cdn.example.com/mono.woff2".to_string(), 4096u64),
+        ];
+        // Only top 2 contributors shown even when 3 fonts are present.
+        assert_eq!(
+            fonts_count_detail(1, &fonts),
+            "1 over — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
         );
     }
 }
