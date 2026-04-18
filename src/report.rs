@@ -168,6 +168,10 @@ fn build_sarif(r: &AuditReport) -> serde_json::Value {
                 "level": "error",
                 "message": { "text": v.detail.clone() },
                 "locations": [{
+                    // Gnomon violations are page-level, not line-level. We use the audited
+                    // URL as the artifact URI. GitHub code scanning surfaces these as PR
+                    // annotations on the run, not as inline diff comments — correct
+                    // behaviour for a tool that audits a URL, not a source file.
                     "physicalLocation": {
                         "artifactLocation": { "uri": r.url.clone() }
                     }
