@@ -331,9 +331,40 @@ mod tests {
     #[test]
     fn mcmaster_byte_comments_are_correct_kib() {
         let out = preset_toml(PresetName::Mcmaster);
+        assert!(out.contains("html   = 10240    # 10 KiB"), "mcmaster html KiB wrong: {out}");
+        assert!(out.contains("css    = 20480    # 20 KiB"), "mcmaster css KiB wrong: {out}");
         assert!(out.contains("js     = 51200    # 50 KiB"), "mcmaster js KiB wrong: {out}");
+        assert!(out.contains("images = 153600   # 150 KiB"), "mcmaster images KiB wrong: {out}");
         assert!(out.contains("fonts  = 61440    # 60 KiB"), "mcmaster fonts KiB wrong: {out}");
         assert!(out.contains("total  = 307200   # 300 KiB"), "mcmaster total KiB wrong: {out}");
+    }
+
+    #[test]
+    fn insley_byte_comments_are_correct_kib() {
+        let out = preset_toml(PresetName::Insley);
+        assert!(out.contains("images = 81920    # 80 KiB"), "insley images KiB wrong: {out}");
+        assert!(out.contains("total  = 102400   # 100 KiB"), "insley total KiB wrong: {out}");
+    }
+
+    // ── count.fonts nonzero ──────────────────────────────────────────────────
+
+    #[test]
+    fn nonzero_count_fonts_is_labeled() {
+        // mcmaster allows 2 web font files — distinct nonzero string in cc()
+        let out = preset_toml(PresetName::Mcmaster);
+        assert!(
+            out.contains("fonts               = 2    # max web font files"),
+            "count.fonts nonzero comment wrong: {out}"
+        );
+    }
+
+    #[test]
+    fn zero_count_fonts_explains_enforcement() {
+        let out = preset_toml(PresetName::Insley);
+        assert!(
+            out.contains("fonts               = 0    # 0 — no web fonts; system fonts only"),
+            "count.fonts zero comment wrong: {out}"
+        );
     }
 
     // ── round-trip: generated TOML parses back ───────────────────────────────
