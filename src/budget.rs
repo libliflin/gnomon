@@ -242,3 +242,116 @@ fn preset_toml(name: PresetName) -> String {
          fonts               = {cfonts:<4} {fonts_c}\n"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── header ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn preset_toml_header_explains_units() {
+        let out = preset_toml(PresetName::Insley);
+        assert!(out.contains("# gnomon.toml — performance budget (insley preset)"), "header line missing");
+        assert!(out.contains("brotli-recompressed transfer sizes"), "units explanation missing");
+        assert!(out.contains("Unknown keys will fail the audit"), "fail-closed notice missing");
+    }
+
+    // ── byte comments ───────────────────────────────────────────────────────
+
+    #[test]
+    fn nonzero_byte_value_shows_kib_comment() {
+        let out = preset_toml(PresetName::Insley);
+        // html = 8192 → # 8 KiB
+        assert!(out.contains("html   = 8192     # 8 KiB"), "html KiB comment wrong: {out}");
+        // css = 14336 → # 14 KiB
+        assert!(out.contains("css    = 14336    # 14 KiB"), "css KiB comment wrong: {out}");
+    }
+
+    #[test]
+    fn zero_byte_value_shows_zero_enforcement_comment() {
+        let out = preset_toml(PresetName::Insley);
+        // js = 0 in insley
+        assert!(out.contains("js     = 0        # 0 — zero JS; the insley standard"), "js zero comment wrong: {out}");
+        // fonts = 0 in insley
+        assert!(out.contains("fonts  = 0        # 0 — no web fonts; system fonts only"), "fonts zero comment wrong: {out}");
+    }
+
+    // ── count comments ──────────────────────────────────────────────────────
+
+    #[test]
+    fn nonzero_count_render_blocking_names_count_not_boolean() {
+        // The specific ambiguity the goal was written to fix: render_blocking = 1
+        // must say "count" not just a bare description.
+        let out = preset_toml(PresetName::Mcmaster);
+        assert!(
+            out.contains("render_blocking     = 1    # count — render-blocking resources allowed"),
+            "render_blocking comment must disambiguate 'count' from boolean: {out}"
+        );
+    }
+
+    #[test]
+    fn zero_count_render_blocking_explains_enforcement() {
+        let out = preset_toml(PresetName::Insley);
+        assert!(
+            out.contains("render_blocking     = 0    # 0 — nothing may block first paint"),
+            "zero render_blocking comment wrong: {out}"
+        );
+    }
+
+    #[test]
+    fn nonzero_count_requests_names_what_is_included() {
+        let out = preset_toml(PresetName::Insley);
+        assert!(
+            out.contains("requests            = 6    # includes the HTML document itself"),
+            "requests comment wrong: {out}"
+        );
+    }
+
+    #[test]
+    fn nonzero_count_third_party_domains_is_labeled() {
+        let out = preset_toml(PresetName::Mcmaster);
+        assert!(
+            out.contains("third_party_domains = 2    # max distinct third-party domains"),
+            "third_party_domains comment wrong: {out}"
+        );
+    }
+
+    #[test]
+    fn zero_count_third_party_domains_explains_enforcement() {
+        let out = preset_toml(PresetName::Insley);
+        assert!(
+            out.contains("third_party_domains = 0    # 0 — no third-party domains"),
+            "zero third_party_domains comment wrong: {out}"
+        );
+    }
+
+    // ── mcmaster nonzero bytes ───────────────────────────────────────────────
+
+    #[test]
+    fn mcmaster_byte_comments_are_correct_kib() {
+        let out = preset_toml(PresetName::Mcmaster);
+        assert!(out.contains("js     = 51200    # 50 KiB"), "mcmaster js KiB wrong: {out}");
+        assert!(out.contains("fonts  = 61440    # 60 KiB"), "mcmaster fonts KiB wrong: {out}");
+        assert!(out.contains("total  = 307200   # 300 KiB"), "mcmaster total KiB wrong: {out}");
+    }
+
+    // ── round-trip: generated TOML parses back ───────────────────────────────
+
+    #[test]
+    fn insley_toml_round_trips_through_config_parser() {
+        let toml_str = preset_toml(PresetName::Insley);
+        // The generated file must parse without error — unknown keys would panic here.
+        let cfg: super::ConfigFile = toml::from_str(&toml_str)
+            .expect("generated insley TOML must parse cleanly");
+        assert_eq!(cfg.preset, "insley");
+    }
+
+    #[test]
+    fn mcmaster_toml_round_trips_through_config_parser() {
+        let toml_str = preset_toml(PresetName::Mcmaster);
+        let cfg: super::ConfigFile = toml::from_str(&toml_str)
+            .expect("generated mcmaster TOML must parse cleanly");
+        assert_eq!(cfg.preset, "mcmaster");
+    }
+}
