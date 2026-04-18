@@ -1207,10 +1207,9 @@ mod tests {
         assert_eq!(vios.len(), 1);
         assert_eq!(vios[0].metric, "lazy_lcp");
         assert_eq!(vios[0].kind, ViolationKind::Theater);
-        assert!(
-            vios[0].detail.contains("lazy-loaded LCP candidate"),
-            "detail should name lazy-loaded LCP candidate, got: {}",
-            vios[0].detail
+        assert_eq!(
+            vios[0].detail,
+            "first <img> has loading=\"lazy\" — lazy-loaded LCP candidate delays first render"
         );
     }
 
