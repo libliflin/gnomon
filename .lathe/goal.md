@@ -1,65 +1,72 @@
-# Goal — Cycle 16
+# Goal — Cycle 17
 
 ## What
 
-When `!analysis.has_charset_meta`, fire a theater violation in `theater_violations`. Add the branch immediately after the `img_missing_dimensions` check:
+Add two fields to `AuditReport` in `src/audit.rs` so the JSON output is self-contained:
 
 ```rust
-if !analysis.has_charset_meta {
-    vios.push(Violation {
-        kind: ViolationKind::Theater,
-        metric: "charset_meta",
-        budget: 0,
-        actual: 1,
-        detail: "missing <meta charset> or http-equiv Content-Type — forces encoding sniff".into(),
-    });
+#[derive(Debug, Serialize)]
+pub struct AuditReport {
+    pub url: String,
+    pub gnomon_version: &'static str,
+    pub preset: &'static str,   // ← new
+    pub pass: bool,              // ← new
+    pub elapsed_ms: u128,
+    // ... rest unchanged
 }
 ```
 
-Add two tests following the `theater_violations_*` pattern in `src/audit.rs`:
+Populate them in `audit_url` at the `AuditReport` construction site (near line 336):
 
-1. `theater_violations_missing_charset_fires` — `HtmlAnalysis { has_charset_meta: false, has_viewport_meta: true, ..Default::default() }` → one Theater/charset_meta violation, metric `"charset_meta"`, detail contains `"encoding sniff"`.
-2. `theater_violations_charset_meta_present_no_violation` — `HtmlAnalysis { has_charset_meta: true, has_viewport_meta: true, ..Default::default() }` → no charset_meta violation in the result.
+```rust
+Ok(AuditReport {
+    url: url_str.to_string(),
+    gnomon_version: env!("CARGO_PKG_VERSION"),
+    preset: budget.preset.name,
+    pass: violations.is_empty(),
+    elapsed_ms: started.elapsed().as_millis(),
+    // ... rest unchanged
+})
+```
 
-Also update `CONTRIBUTING.md`'s "Good first issues" section. `has_charset_meta` is no longer a gap once this lands — either document the next identified gap or remove the section. Do not leave it pointing at a violation that already exists.
+No change to `print_human` — it already reads `budget.preset.name` separately. No change to `print_json` — `#[derive(Serialize)]` handles the new fields automatically. The JSON output changes: `"preset": "insley"` and `"pass": true/false` appear between `gnomon_version` and `elapsed_ms`.
 
-No new types. No schema changes. `has_charset_meta` is already a field on `HtmlAnalysis`, already populated by `analyze_html`, already tested in `analyze.rs` (`charset_meta_via_charset_attr_is_detected`, `charset_meta_via_http_equiv_is_detected`), already serialized to JSON. The only changes are the branch in `theater_violations`, two tests, and the CONTRIBUTING.md update.
+Add two tests in `src/audit.rs` pinning the new fields. `AuditReport` fields are `pub`, so direct struct construction works — no network call needed:
+
+1. `audit_report_preset_field_reflects_budget_name` — construct `AuditReport { preset: "mcmaster", pass: true, violations: vec![], ... }` and assert `report.preset == "mcmaster"` and `report.pass`.
+2. `audit_report_pass_false_when_violations_present` — same with `pass: false` and one violation in the vec → `!report.pass`.
+
+No new types beyond the two fields. No behavior change to the audit logic itself.
 
 ## Which Stakeholder
 
-**The web performance engineer** (stakeholder 1). Last served cycle 12 — four cycles ago, the longest wait in the current rotation.
+**The CI integrator** (stakeholder 2). Last served cycle 13 — four cycles ago. Most under-served stakeholder in the current rotation.
 
-Step 5 of their journey: "Try JSON output for further processing." The engineer pipes `gnomon audit --format json` to their dashboard tooling. They read `html_analysis` and find `has_charset_meta: false`. They check the violations array. Nothing. Gnomon detected a render-critical issue — encoding sniffing delays HTML parsing — and said nothing.
+Step 5 of their journey: "Try `gnomon audit --format json` and check exit codes." The CI integrator who builds dashboard tooling on top of gnomon's JSON output hits a trust gap: the JSON has `violations`, `totals`, `html_analysis` — but no `preset` and no explicit `pass`. Human output says `preset: mcmaster`. Machine output says nothing about which budget was applied or whether the audit passed.
 
 ## Why Now
 
-Four cycles since the web performance engineer was served.
+Four cycles since the CI integrator was served (cycle 13 added pre-built binaries). The CI snippet is clean, exit codes work, `gnomon.toml` auto-discovery works. The remaining confidence gap is the JSON output.
 
-The specific moment: `gnomon audit https://example.com --format json`. `html_analysis.has_charset_meta: false`. Violations: empty. Example.com has no charset meta declaration. Gnomon knows. Gnomon says nothing.
+The specific moment: `gnomon audit https://example.com --format json`. Search the JSON for "insley" or "mcmaster" — nothing. Search for "pass" or "fail" — nothing. The violations array says what failed. Nothing says which budget it was checked against.
 
-This is the same class as cycle 12 (`img_missing_dimensions`): detected, tested, serialized to JSON, never fires a violation. The gap is worse now because CONTRIBUTING.md (cycle 15) documents it as a "known gap" — a web performance engineer reading the JSON can find the field, consult CONTRIBUTING.md, and see that gnomon explicitly knows this is a gap it hasn't closed yet. The violations array cannot be trusted as the complete picture of what gnomon knows.
+Human output is more informative than machine output. That's backwards. A CI gate that bills itself as "precision, certainty, and no apology" should be most precise in its machine-readable format — the one tooling consumes, dashboards store, and trend lines are built from. Every entry in that time series should be self-describing. If five runs used the insley preset and five used mcmaster (because someone quietly changed `gnomon.toml`), nothing in the JSON would show that boundary.
 
-**Off-brand.** PLAN.md §7.1 lists "missing charset in first 1024 bytes" as an anti-theater rule. The detection runs. The field is in the JSON. The violation is silent. Gnomon tracks it. Gnomon says nothing. That silence is off-brand for a tool that bills itself as "precision, certainty, and no apology."
-
-The `theater_violations` seam extracted in cycle 11 was built for exactly this. One branch, two tests.
+This is an additive schema change — new fields, no removals. JSON consumers that ignore unknown fields see no breakage. The change is two lines in `AuditReport`, two lines at the construction site, two tests.
 
 ## Lived-Experience Note
 
-*I became the web performance engineer. Build clean. Clippy clean. 109 tests passing. High confidence.*
+*I became the CI integrator. Build clean, 112 tests passing. I read the README CI Integration section — the snippet was there, exit codes documented, the auto-discovery note was clear.*
 
-*I ran `gnomon audit https://example.com --format json`. PASS — no violations. I scanned the JSON looking for what gnomon knows about the page. Under `html_analysis`:*
+*I ran `gnomon audit https://example.com` — human output: `preset: insley`, one violation (`charset_meta`), `FAIL`. Clear.*
 
-```json
-"has_charset_meta": false
-```
+*Then I switched to `--format json` to build my dashboard. Exit code 1. I read the JSON. I searched for "insley". Not there. I searched for "preset". Not there. I searched for "pass" or "fail" or "result". Nothing.*
 
-*I know what this means. No `<meta charset="UTF-8">`, no `http-equiv Content-Type`. The browser cannot know the document encoding before it parses content — it has to sniff. That is a render-critical delay. The browser cannot begin tokenizing HTML until encoding is resolved.*
+*The violations array told me WHAT failed. But the JSON had no record of WHICH STANDARD it was checked against. If I have ten entries in my dashboard's time series, and five used the insley preset and five used mcmaster (because someone changed `gnomon.toml`), my trend line would be comparing apples to oranges. Nothing in the JSON would flag that.*
 
-*I looked at the violations array. Empty. I looked at the human output. Nothing about charset.*
+*The worst moment: `gnomon audit https://example.com --format json | jq '.pass'` returns `null`. `| jq '.preset'` returns `null`. The JSON record that lives in my database and powers my graphs carries no record of what it was checked against. The human output that disappears after a CI run does.*
 
-*Gnomon saw it. The field is in the JSON. PLAN.md §7.1 lists it. CONTRIBUTING.md says it's a known gap. The gap is documented. The gap still exists.*
-
-*The worst moment: realizing the violations array and the `html_analysis` object are telling different stories. The JSON says gnomon knows about `has_charset_meta: false`. The violations say gnomon has nothing to report. For a web performance engineer piping output to a dashboard, that's a trust failure: I cannot build a monitor on violations if violations don't reflect everything gnomon knows.*
+*The confidence signal — "when this passes, I trust it" — requires knowing what "it" was checked against. When the JSON says `"violations": []`, it should also say `"preset": "mcmaster"` and `"pass": true`. Otherwise I'm trusting a pass against an unknown standard.*
 
 ---
 
