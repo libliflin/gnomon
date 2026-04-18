@@ -51,7 +51,7 @@ Add gnomon to a GitHub Actions workflow using the pre-built binary:
   run: gnomon audit https://staging.your-site.com
 ```
 
-For violations surfaced in GitHub code scanning (requires SARIF upload):
+For violations surfaced in GitHub code scanning AND a failing build (the correct combined pattern):
 
 ```yaml
 - name: Install gnomon
@@ -59,14 +59,16 @@ For violations surfaced in GitHub code scanning (requires SARIF upload):
     curl -fsSL https://github.com/libliflin/gnomon/releases/latest/download/gnomon-x86_64-unknown-linux-musl.tar.gz | tar xz
     sudo mv gnomon /usr/local/bin/
 - name: Audit performance budget (SARIF)
-  run: gnomon audit https://staging.your-site.com --format sarif > results.sarif; true
+  run: gnomon audit https://staging.your-site.com --format sarif > results.sarif || true
 - name: Upload SARIF to GitHub code scanning
   uses: github/codeql-action/upload-sarif@v3
   with:
     sarif_file: results.sarif
+- name: Enforce performance gate
+  run: gnomon audit https://staging.your-site.com
 ```
 
-Exit code 1 (violations) must not abort the workflow before the upload step — the `; true` suffix ensures the SARIF file is always uploaded. Gnomon violations are page-level, not line-level, so GitHub surfaces them as annotations on the workflow run rather than inline PR diff comments — the correct behavior for a tool that audits a URL, not a source file.
+The SARIF step always exits 0 (`|| true`) so the upload step never gets skipped — without this, a violation would abort the workflow before the SARIF file reaches GitHub. The gate step runs gnomon a second time with no output redirect: it exits 1 on violations and fails the build. Running gnomon twice is the correct pattern when you want both annotations and enforcement. Gnomon violations are page-level, not line-level, so GitHub surfaces them as annotations on the workflow run rather than inline PR diff comments — the correct behavior for a tool that audits a URL, not a source file.
 
 ## Use
 
