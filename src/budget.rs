@@ -859,6 +859,77 @@ mod tests {
     }
 
     #[test]
+    fn allowlist_expires_exactly_today_is_accepted() {
+        // The expiry date is inclusive: an entry with expires = today must pass.
+        // today > today is false, so the entry should not be considered expired.
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let today = super::today_iso();
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 4,
+            justification: "Vendor transition — PERF-10 — expires today".to_string(),
+            expires: today,
+        }];
+        super::apply_allowlist(&mut budget, &entries).unwrap();
+        assert_eq!(budget.preset.count.third_party_domains, 4);
+    }
+
+    #[test]
+    fn allowlist_multiple_entries_different_metrics_all_applied() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        assert_eq!(budget.preset.count.third_party_domains, 2);
+        assert_eq!(budget.preset.bytes.css, 20 * 1024);
+        let entries = vec![
+            super::AllowlistEntry {
+                metric: "third_party_domains".to_string(),
+                budget: 5,
+                justification: "Analytics vendor — PERF-42 — replace by 2099-01-01".to_string(),
+                expires: "2099-01-01".to_string(),
+            },
+            super::AllowlistEntry {
+                metric: "css".to_string(),
+                budget: 40 * 1024,
+                justification: "Legacy stylesheet — PERF-55 — replace by 2099-01-01".to_string(),
+                expires: "2099-01-01".to_string(),
+            },
+        ];
+        super::apply_allowlist(&mut budget, &entries).unwrap();
+        assert_eq!(budget.preset.count.third_party_domains, 5);
+        assert_eq!(budget.preset.bytes.css, 40 * 1024);
+    }
+
+    #[test]
+    fn allowlist_count_fonts_metric_loosens_count_budget() {
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        assert_eq!(budget.preset.count.fonts, 2);
+        let original_bytes_fonts = budget.preset.bytes.fonts;
+        let entries = vec![super::AllowlistEntry {
+            metric: "count.fonts".to_string(),
+            budget: 6,
+            justification: "Brand typeface — PERF-71 — replace by 2099-01-01".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        super::apply_allowlist(&mut budget, &entries).unwrap();
+        assert_eq!(budget.preset.count.fonts, 6);
+        // bytes.fonts must be unchanged
+        assert_eq!(budget.preset.bytes.fonts, original_bytes_fonts);
+    }
+
+    #[test]
+    fn allowlist_whitespace_padded_placeholder_is_rejected() {
+        // "  TODO  " trims to "todo" — must still be rejected.
+        let mut budget = Budget::from_preset(PresetName::Mcmaster);
+        let entries = vec![super::AllowlistEntry {
+            metric: "third_party_domains".to_string(),
+            budget: 5,
+            justification: "  TODO  ".to_string(),
+            expires: "2099-01-01".to_string(),
+        }];
+        let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
+        assert!(err.to_string().contains("placeholder justification"));
+    }
+
+    #[test]
     fn gnomon_toml_with_expired_allowlist_fails_resolve_budget() {
         let _lock = CWD_LOCK.lock().unwrap();
         let _cwd = CwdGuard::new();
