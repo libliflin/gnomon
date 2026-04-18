@@ -242,7 +242,13 @@ fn preset_toml(name: PresetName) -> String {
          requests            = {creq:<4} {requests_c}\n\
          third_party_domains = {ctpd:<4} {tpd_c}\n\
          render_blocking     = {crb:<4} {rb_c}\n\
-         fonts               = {cfonts:<4} {fonts_c}\n"
+         fonts               = {cfonts:<4} {fonts_c}\n\
+         \n\
+         # NOTE (v0.0.2): allowlist justifications and per-route overrides are not yet\n\
+         # implemented. Adding [[allowlist]] or [routes.*] will fail with an\n\
+         # unknown-field error. To temporarily loosen a budget today: raise the number\n\
+         # above, explain the reason in your PR description, and link the ticket.\n\
+         # Justifications with expiries arrive in the next release.\n"
     )
 }
 
@@ -367,6 +373,28 @@ mod tests {
         assert!(
             out.contains("fonts               = 0    # 0 — no web fonts; system fonts only"),
             "count.fonts zero comment wrong: {out}"
+        );
+    }
+
+    // ── v0.0.2 exception note ────────────────────────────────────────────────
+
+    #[test]
+    fn preset_toml_closing_note_explains_allowlist_not_yet_implemented() {
+        // A developer who adds [[allowlist]] from PLAN.md §8 hits an unknown-field
+        // error with no guidance. This note must be present to turn that dead end
+        // into a clear next step.
+        let out = preset_toml(PresetName::Insley);
+        assert!(
+            out.contains("allowlist justifications and per-route overrides are not yet"),
+            "v0.0.2 note missing: {out}"
+        );
+        assert!(
+            out.contains("unknown-field error"),
+            "note must name the error the developer will see: {out}"
+        );
+        assert!(
+            out.contains("raise the number"),
+            "note must name the available workaround: {out}"
         );
     }
 
