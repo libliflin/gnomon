@@ -180,22 +180,65 @@ fn preset_toml(name: PresetName) -> String {
         PresetName::Insley => insley(),
         PresetName::Mcmaster => mcmaster(),
     };
+
+    let bc = |v: u64, zero: &str| -> String {
+        if v == 0 {
+            format!("# 0 — {zero}")
+        } else {
+            format!("# {} KiB", v / 1024)
+        }
+    };
+    let cc = |v: u32, zero: &str, nonzero: &str| -> String {
+        if v == 0 {
+            format!("# 0 — {zero}")
+        } else {
+            nonzero.to_string()
+        }
+    };
+
+    let html_c    = bc(p.bytes.html,   "zero HTML");
+    let css_c     = bc(p.bytes.css,    "zero CSS");
+    let js_c      = bc(p.bytes.js,     "zero JS; the insley standard");
+    let images_c  = bc(p.bytes.images, "no images");
+    let fonts_b_c = bc(p.bytes.fonts,  "no web fonts; system fonts only");
+    let total_c   = bc(p.bytes.total,  "zero total");
+
+    let requests_c = cc(p.count.requests,            "zero requests",              "# includes the HTML document itself");
+    let tpd_c      = cc(p.count.third_party_domains, "no third-party domains",     "# max distinct third-party domains");
+    let rb_c       = cc(p.count.render_blocking,     "nothing may block first paint", "# count — render-blocking resources allowed");
+    let fonts_c    = cc(p.count.fonts,               "no web fonts; system fonts only", "# max web font files");
+
+    let bhtml   = p.bytes.html;
+    let bcss    = p.bytes.css;
+    let bjs     = p.bytes.js;
+    let bimages = p.bytes.images;
+    let bfonts  = p.bytes.fonts;
+    let btotal  = p.bytes.total;
+    let creq    = p.count.requests;
+    let ctpd    = p.count.third_party_domains;
+    let crb     = p.count.render_blocking;
+    let cfonts  = p.count.fonts;
+    let pname   = p.name;
+
     format!(
-        "preset = \"{}\"\n\n\
+        "# gnomon.toml — performance budget ({pname} preset)\n\
+         # All byte values are brotli-recompressed transfer sizes. CDN headers are not trusted.\n\
+         # Edit these values to tighten or loosen your budget. Unknown keys will fail the audit.\n\
+         \n\
+         preset = \"{pname}\"\n\
+         \n\
          [bytes]\n\
-         html   = {}\n\
-         css    = {}\n\
-         js     = {}\n\
-         images = {}\n\
-         fonts  = {}\n\
-         total  = {}\n\n\
+         html   = {bhtml:<8} {html_c}\n\
+         css    = {bcss:<8} {css_c}\n\
+         js     = {bjs:<8} {js_c}\n\
+         images = {bimages:<8} {images_c}\n\
+         fonts  = {bfonts:<8} {fonts_b_c}\n\
+         total  = {btotal:<8} {total_c}\n\
+         \n\
          [count]\n\
-         requests            = {}\n\
-         third_party_domains = {}\n\
-         render_blocking     = {}\n\
-         fonts               = {}\n",
-        p.name,
-        p.bytes.html, p.bytes.css, p.bytes.js, p.bytes.images, p.bytes.fonts, p.bytes.total,
-        p.count.requests, p.count.third_party_domains, p.count.render_blocking, p.count.fonts,
+         requests            = {creq:<4} {requests_c}\n\
+         third_party_domains = {ctpd:<4} {tpd_c}\n\
+         render_blocking     = {crb:<4} {rb_c}\n\
+         fonts               = {cfonts:<4} {fonts_c}\n"
     )
 }
