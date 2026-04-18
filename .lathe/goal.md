@@ -1,67 +1,116 @@
-# Goal — Cycle 20
+# Goal — Cycle 21
 
 ## What
 
-When gnomon fetches image resources, it already has each resource's `content_type`. It already fires a bytes violation naming the two largest images by size. But it says nothing about whether those images are served in a legacy format. On a real-world site (The Verge: 62 images, 51 JPEG + 11 PNG), gnomon knows every image's content type and says nothing. PLAN.md §7.1 explicitly names this check: "reject JPEG/PNG where AVIF/WebP exists."
+Add SARIF 2.1.0 output to gnomon. When `--format sarif` is passed, gnomon writes a SARIF document to stdout. This is the standard format GitHub Code Scanning accepts — it enables violations to appear as PR annotations and in the Security tab without any additional tooling.
 
-Add a Theater violation that fires when image resources are served as JPEG, PNG, or GIF — legacy formats that AVIF or WebP would replace with better compression at equivalent visual quality.
+**Expected output structure (one violation):**
 
-**Expected violation:**
-
-```
-✗  theater   img_format   62 image(s) served as JPEG/PNG/GIF — serve AVIF or WebP to reduce transfer size
+```json
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "gnomon",
+          "version": "0.0.2",
+          "informationUri": "https://github.com/libliflin/gnomon"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "theater/charset_meta",
+          "level": "error",
+          "message": {
+            "text": "missing <meta charset> or http-equiv Content-Type — forces encoding sniff"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "https://example.com/"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
 ```
 
 **Rules:**
-- Count fetched resources classified as images (by content-type or URL classification) with `content_type` matching `image/jpeg`, `image/png`, or `image/gif`
-- Only count resources that were fetched without error (exclude resources with a non-null `error` field)
-- Exclude SVG (`image/svg+xml`), WebP (`image/webp`), and AVIF (`image/avif`) — these are already appropriate formats
-- If the count is > 0, fire `ViolationKind::Theater` with metric `"img_format"`, `budget: 0`, `actual: count`, detail as shown above
+- Each violation maps to a SARIF result with `ruleId = "{kind_label}/{metric}"` (e.g., `"theater/charset_meta"`, `"bytes/css"`, `"count/render_blocking"`, `"forbidden/forbidden"`)
+- Use `ViolationKind::label()` (already exists in `violation.rs`) for the kind string
+- `level` is always `"error"` — gnomon has no warning state
+- `message.text` is the violation's `detail` string
+- `locations[0].physicalLocation.artifactLocation.uri` is `report.url`
+- When no violations: `results: []`
+- `tool.driver.version` is `report.gnomon_version`
+- Exit codes unchanged: 0 pass, 1 violations, 2 config/network error
 
-**Detail string:**
+**Files to change:**
+- `src/cli.rs` — add `Sarif` to `OutputFormat` enum
+- `src/report.rs` — add `pub fn print_sarif(r: &AuditReport) -> anyhow::Result<()>`; use `serde_json::json!` macro or manual `serde_json::Value` — no new named structs required
+- `src/main.rs` — handle `OutputFormat::Sarif` in the match arm, same pattern as `OutputFormat::Json`
+- `README.md` — update the CI Integration section to show the SARIF workflow
+
+**README CI Integration addition** (append after the existing snippet):
+
+```markdown
+To surface violations as GitHub PR annotations via Code Scanning:
+
+```yaml
+- name: Run gnomon
+  run: gnomon audit https://staging.your-site.com --format sarif > gnomon.sarif
+  continue-on-error: true
+- name: Upload SARIF to GitHub Code Scanning
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: gnomon.sarif
 ```
-"{count} image(s) served as JPEG/PNG/GIF — serve AVIF or WebP to reduce transfer size"
 ```
 
-The violation lives in `audit_url` in `src/audit.rs`, assembled from the fetched resources — not in `theater_violations` (which takes only `&HtmlAnalysis`). Place it after the existing `theater_violations` call in the violations assembly block.
+Add tests pinning the new output in `src/report.rs` under `#[cfg(test)] mod tests`:
 
-Add tests pinning the new check:
+1. `sarif_output_schema_version_and_tool_set` — SARIF document has `$schema == "https://json.schemastore.org/sarif-2.1.0.json"`, `version == "2.1.0"`, `runs[0].tool.driver.name == "gnomon"`
+2. `sarif_output_empty_results_when_no_violations` — AuditReport with empty violations vec → `runs[0].results` is an empty array
+3. `sarif_output_single_violation_maps_correctly` — one Theater/charset_meta violation → `results[0].ruleId == "theater/charset_meta"`, `results[0].level == "error"`, `results[0].message.text` equals the detail string, `results[0].locations[0].physicalLocation.artifactLocation.uri == "https://example.com/"`
+4. `sarif_output_rule_id_is_kind_slash_metric` — a Bytes/css violation maps to `ruleId == "bytes/css"`
 
-1. `img_format_violation_fires_for_jpeg_and_png` — fetched resources include two JPEG images and one PNG; violation fires with `actual == 3`, metric `"img_format"`, detail contains "3 image(s)".
-2. `img_format_violation_does_not_fire_for_webp_avif` — fetched resources include one WebP and one AVIF image; no `img_format` violation.
-3. `img_format_violation_excludes_fetch_errors` — fetched resources include one JPEG image with a non-null `error` field and one JPEG without error; violation fires with `actual == 1` (only the successfully fetched JPEG counted).
-4. `img_format_violation_does_not_fire_when_no_images` — fetched resources include only JS and CSS (no images); no `img_format` violation.
-
-No new types. No schema changes. No changes to `theater_violations`. Only the violation assembly in `audit_url` and its tests.
+No new dependencies needed — `serde_json` is already in `Cargo.toml`. No changes to the existing JSON or human output paths.
 
 ## Which Stakeholder
 
-**The web performance engineer** (stakeholder 1). Last served cycle 16 — four cycles ago. Most under-served stakeholder in the current rotation.
+**The CI integrator** (stakeholder 2). Last served cycle 17 — four cycles ago. Most under-served stakeholder in the current rotation.
 
-Step 4 of their journey: "Try to act on a violation — find the source of the bloat, understand the rule."
+Step 5 of their journey: "Try to understand SARIF output (for GitHub code scanning) — doesn't exist yet."
 
-The images bytes violation is the highest-overage violation on media-heavy sites. When it fires, gnomon names the two largest files by size. But the web performance engineer's highest-ROI action is often FORMAT conversion — switching JPEG/PNG images to AVIF/WebP can reduce image weight by 30–50% without changing which images appear on the page. Gnomon currently detects image bytes, but not image format. The engineer auditing their site has to inspect the JSON manually to understand whether format conversion is an opportunity. It's not surfaced as a violation.
+The CI integrator wiring gnomon into GitHub Actions wants violations to appear as PR annotations — the diff view shows exactly where to look, the Security tab tracks them over time, and reviewers see the finding without opening CI logs. All of this works out of the box with `github/codeql-action/upload-sarif@v3`. The only missing piece is a SARIF-formatted output from gnomon.
 
 ## Why Now
 
-Four cycles have passed since the web performance engineer was served (cycles 17–19 served CI integrator, budget owner, contributor).
+Four cycles have passed since the CI integrator was served (cycles 18–21 served budget owner, contributor, web perf engineer).
 
-The specific moment that failed: I ran `gnomon audit https://www.theverge.com`. The images violation fired: `18.40 MiB over — 258176_Did_Neuralink_make_the_wrong_bet__CVirginia.jpg (3.86 MiB), STKS517_AGE_VERIFICATION_B.jpg (1.92 MiB)`. That told me WHICH images were largest. But I needed to know: should I compress them harder, remove some, or convert formats? Gnomon knew the answer — it fetched 62 JPEG/PNG images. `content_type: "image/jpeg"` is in the JSON for every one. The violation said nothing about format.
+The specific moment that failed: I built the CI pipeline. `gnomon audit https://staging.my-site.com --format json > gnomon.json; echo $?` — exit codes work. The JSON has `pass` and `preset`. I can parse violations. I wrote a shell script to format them as GitHub PR comments using `jq`. It works, but it's fragile — I'm writing JSON parsing in bash.
 
-I ran `--format json` and counted manually: 51 `image/jpeg`, 11 `image/png`, 0 AVIF, 0 WebP. Sixty-two images in legacy formats. That's the biggest quick-win for the site's image weight — not "which is largest" but "they're all JPEG/PNG." Gnomon had the data. The violation didn't use it.
+Then I looked for `--format sarif`. Not there. The GitHub code scanning workflow (`upload-sarif`) is the standard path — no bash parsing, violations become first-class PR annotations that reviewers can dismiss, suppress, and track over time. SARIF is the format that turns gnomon from "a shell command that fails CI" into "a CI tool whose findings appear in the PR diff."
 
-This is the same class of gap as cycles 4, 6, 8: data in scope, violation doesn't use it. But unlike those, this is a data point gnomon hasn't surfaced in ANY output context — not in violation detail, not in the theater section, not in a count. The format information is locked in the JSON resource list and never converted to guidance.
+The CI integrator's confidence signal — "when this fails, it means something" — holds for exit codes and `pass: bool`. But confidence in the pipeline means more than a red CI step: it means the reviewer SEES the violation where it matters, in the PR view, not buried in CI logs. SARIF closes that gap.
 
-**This is on-brand.** PLAN.md §7.1 names it: "reject JPEG/PNG where AVIF/WebP exists." Gnomon audited 62 images. Gnomon said nothing about their format. That silence is exactly what this check closes.
+SARIF is explicitly named in the CI integrator journey as missing. The implementation is self-contained: one new output format, one new function in `report.rs`, four tests. No new dependencies. No changes to existing output.
 
 ## Lived-Experience Note
 
-*I became the web performance engineer. Build clean. I ran `gnomon audit https://www.theverge.com`. Sixteen violations — bytes, counts, theater, forbidden. Impressive. Most named, most actionable. Momentum building.*
+*I became the CI integrator. Build clean, 136 tests, clippy clean. I read the CI Integration section in README — clear install snippet, `gnomon audit https://staging.example.com`. Exit codes documented. I ran `gnomon audit https://example.com --format json; echo $?` — `"pass": false`, exit 1. The confidence signal held: when it fails, it means something.*
 
-*The images violation: `18.40 MiB over — 258176_Did_Neuralink_make_the_wrong_bet__CVirginia.jpg (3.86 MiB), STKS517_AGE_VERIFICATION_B.jpg (1.92 MiB)`. Named top 2 files. I can act on that — those are the images to optimize first.*
+*I wanted violations in GitHub PR annotations. That's the standard pattern — `github/codeql-action/upload-sarif@v3` takes a SARIF file and posts violations as inline annotations in the PR diff. I searched the `--help` output: `--format` accepts `human`, `json`. No `sarif`.*
 
-*But optimize HOW? Compress harder? Remove some? Switch formats? The violation told me nothing about whether I was already using modern formats. The images budget violation just says "you have too many image bytes."*
+*I tried to work around it. I wrote a bash script using `jq` to parse the JSON violations and post them as PR comments via the GitHub API. It worked, mostly. But it was fragile — different violation formats, special characters in detail strings breaking the JSON, no way to dismiss a violation as "accepted risk." And the violations appeared as PR comments, not as diff annotations. The reviewer had to navigate to the comment and then manually find the relevant code.*
 
-*I ran `--format json`. I looked through the `resources` array. Every image: `"content_type": "image/jpeg"`. All 51 of them. Plus 11 PNGs. Zero WebP. Zero AVIF. That's the actual finding — 62 images in legacy formats, none converted. That's not a "largest file" problem, that's a "missing format conversion pipeline" problem. The fix is different: not "delete images" but "run all images through a WebP/AVIF converter."*
+*The worst moment: reading GitHub's documentation for code scanning, seeing the `upload-sarif` action example, realizing gnomon needed exactly one more `--format` option to plug straight in. The data is all there — `violations` array, `kind`, `metric`, `detail`, `url`. The SARIF format is just a different envelope around it. Gnomon has everything needed to produce it.*
 
-*The momentum died at the format check. Gnomon named the bytes, named the biggest files — but didn't tell me the FORMAT was wrong across the board. I had to grep through the JSON myself. Format conversion is one of the top three image optimization actions (alongside compression and lazy loading), and gnomon has all the data to surface it. It just doesn't.*
+*The confidence signal — "when this fails, it means something, and reviewers can see it" — breaks without SARIF. A red CI step means something. A PR annotation in the diff means something different: it means the specific thing that's wrong is pointed at. SARIF is the difference between "build failed, go look at CI logs" and "this violation fires here."*
