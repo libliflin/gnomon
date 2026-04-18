@@ -754,6 +754,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn modulepreload_also_increments_preload_hint_count() {
+        // rel.contains("preload") is the detection condition — rel="modulepreload"
+        // satisfies it. This pins that ES-module preloads count toward preload_hint_count
+        // so contributors don't add duplicate detection logic for modulepreload.
+        let html = r#"<!doctype html><html><head>
+            <link rel="modulepreload" href="/app.js">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(
+            a.preload_hint_count, 1,
+            "rel=modulepreload satisfies contains(\"preload\") and must increment preload_hint_count"
+        );
+    }
+
     // ── meta tags ─────────────────────────────────────────────────────────────
 
     #[test]
