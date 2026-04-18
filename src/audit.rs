@@ -326,6 +326,22 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     // Anti-theater.
     violations.extend(theater_violations(&analysis));
 
+    // Image format — JPEG/PNG/GIF when AVIF/WebP should be used.
+    // Assembled from fetched resources (not from HTML analysis), so it lives here
+    // rather than in theater_violations.
+    let legacy_fmt_count = count_legacy_images(&fetched);
+    if legacy_fmt_count > 0 {
+        violations.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "img_format",
+            budget: 0,
+            actual: legacy_fmt_count as u64,
+            detail: format!(
+                "{legacy_fmt_count} image(s) served as JPEG/PNG/GIF — serve AVIF or WebP to reduce transfer size"
+            ),
+        });
+    }
+
     // Fetch errors.
     let mut errored_urls: Vec<String> = Vec::new();
     for f in &fetched {
@@ -545,6 +561,24 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
         });
     }
     vios
+}
+
+/// Returns the count of successfully fetched resources served in a legacy image
+/// format (JPEG, PNG, GIF). Resources with fetch errors are excluded — content
+/// type is unknown when a fetch fails. Strips MIME parameters (e.g. `; charset`)
+/// before comparison.
+fn count_legacy_images(fetched: &[Fetched]) -> usize {
+    fetched
+        .iter()
+        .filter(|f| {
+            if f.error.is_some() {
+                return false;
+            }
+            let ct = f.content_type.as_deref().unwrap_or("");
+            let base = ct.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            matches!(base.as_str(), "image/jpeg" | "image/png" | "image/gif")
+        })
+        .count()
 }
 
 /// Naive eTLD+1 for third-party comparison. Falls short on `.co.uk` etc., but
@@ -1367,5 +1401,54 @@ mod tests {
         assert!(metrics.contains(&"viewport_meta"), "viewport_meta must fire");
         assert!(metrics.contains(&"charset_meta"), "charset_meta must fire");
         assert!(metrics.contains(&"img_dimensions"), "img_dimensions must fire");
+    }
+
+    // ---- count_legacy_images ----
+
+    fn fetched_with_ct(content_type: Option<&str>, error: Option<&str>) -> Fetched {
+        Fetched {
+            url: "https://cdn.example.com/img.jpg".to_string(),
+            status: 200,
+            content_type: content_type.map(|s| s.to_string()),
+            wire_bytes: 1000,
+            raw_bytes: 1000,
+            brotli_bytes: 1000,
+            error: error.map(|s| s.to_string()),
+            body: None,
+        }
+    }
+
+    #[test]
+    fn count_legacy_images_fires_for_jpeg_and_png() {
+        // Both JPEG and PNG are legacy formats — each should contribute to the count.
+        let fetched = vec![
+            fetched_with_ct(Some("image/jpeg"), None),
+            fetched_with_ct(Some("image/png"), None),
+        ];
+        assert_eq!(count_legacy_images(&fetched), 2);
+    }
+
+    #[test]
+    fn count_legacy_images_does_not_fire_for_webp_and_avif() {
+        // WebP and AVIF are modern formats — must not trigger the legacy count.
+        let fetched = vec![
+            fetched_with_ct(Some("image/webp"), None),
+            fetched_with_ct(Some("image/avif"), None),
+        ];
+        assert_eq!(count_legacy_images(&fetched), 0);
+    }
+
+    #[test]
+    fn count_legacy_images_excludes_fetch_errors() {
+        // A JPEG that errored must not be counted — content_type cannot be trusted
+        // when the fetch failed.
+        let fetched = vec![fetched_with_ct(Some("image/jpeg"), Some("timeout"))];
+        assert_eq!(count_legacy_images(&fetched), 0);
+    }
+
+    #[test]
+    fn count_legacy_images_returns_zero_with_no_images() {
+        // Empty resource list must never produce a violation.
+        assert_eq!(count_legacy_images(&[]), 0);
     }
 }
