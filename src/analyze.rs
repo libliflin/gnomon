@@ -575,6 +575,33 @@ mod tests {
         assert_eq!(classify("/file.js", Some("text/css")), AssetKind::Css);
     }
 
+    // ── stylesheet render-blocking ────────────────────────────────────────────
+
+    #[test]
+    fn stylesheet_in_head_is_render_blocking() {
+        // Positive case: a plain <link rel="stylesheet"> in <head> must increment
+        // render_blocking_in_head and be flagged render_blocking on the ResourceRef.
+        let html = r#"<!doctype html><html><head>
+            <link rel="stylesheet" href="/main.css">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 1);
+        assert_eq!(a.stylesheet_urls.len(), 1);
+        assert!(a.stylesheet_urls[0].render_blocking);
+    }
+
+    #[test]
+    fn disabled_stylesheet_is_not_render_blocking() {
+        // The `disabled` attribute on a <link rel="stylesheet"> prevents the browser
+        // from loading it — gnomon must not count it as render-blocking.
+        let html = r#"<!doctype html><html><head>
+            <link rel="stylesheet" href="/late.css" disabled>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+        assert!(!a.stylesheet_urls[0].render_blocking);
+    }
+
     // ── stylesheet in body / print media ─────────────────────────────────────
 
     #[test]
