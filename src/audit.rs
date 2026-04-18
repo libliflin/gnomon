@@ -1562,4 +1562,18 @@ mod tests {
         let fetched = vec![fetched_with_ct(None, None)];
         assert_eq!(count_legacy_images(&fetched), 0);
     }
+
+    #[test]
+    fn count_legacy_images_is_case_insensitive() {
+        // Some CDNs and servers return uppercase or mixed-case Content-Type headers
+        // (e.g. `IMAGE/JPEG`, `Image/Png`). The filter normalises via
+        // `to_ascii_lowercase()` before matching — this test pins that the
+        // normalisation is load-bearing and a future rewrite can't drop it.
+        let fetched = vec![
+            fetched_with_ct(Some("IMAGE/JPEG"), None),
+            fetched_with_ct(Some("Image/Png"), None),
+            fetched_with_ct(Some("IMAGE/GIF"), None),
+        ];
+        assert_eq!(count_legacy_images(&fetched), 3);
+    }
 }
