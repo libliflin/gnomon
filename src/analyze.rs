@@ -24,6 +24,7 @@ pub struct HtmlAnalysis {
     pub preload_hint_count: u32,
     pub preconnect_targets: Vec<String>,
     pub preload_font_no_crossorigin: u32,
+    pub meta_http_equiv_refresh: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -277,6 +278,14 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
             .unwrap_or(false)
         {
             a.has_charset_meta = true;
+        }
+        if el
+            .value()
+            .attr("http-equiv")
+            .map(|v| v.eq_ignore_ascii_case("refresh"))
+            .unwrap_or(false)
+        {
+            a.meta_http_equiv_refresh = true;
         }
     }
 
@@ -1070,5 +1079,47 @@ mod tests {
         </head><body></body></html>"#;
         let a = analyze(html);
         assert!(a.has_charset_meta);
+    }
+
+    // ── meta_http_equiv_refresh ───────────────────────────────────────────────
+
+    #[test]
+    fn meta_http_equiv_refresh_is_detected() {
+        let html = r#"<!doctype html><html><head>
+            <meta http-equiv="refresh" content="0; url=https://example.com/new">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(a.meta_http_equiv_refresh, "meta http-equiv=refresh must set meta_http_equiv_refresh");
+    }
+
+    #[test]
+    fn meta_http_equiv_refresh_absent_is_false() {
+        let html = r#"<!doctype html><html><head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(!a.meta_http_equiv_refresh, "no refresh meta must leave meta_http_equiv_refresh false");
+    }
+
+    #[test]
+    fn meta_http_equiv_refresh_case_insensitive() {
+        // http-equiv attribute value is case-insensitive per the HTML spec.
+        let html = r#"<!doctype html><html><head>
+            <meta http-equiv="Refresh" content="5">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(a.meta_http_equiv_refresh, "Refresh (capitalized) must still set meta_http_equiv_refresh");
+    }
+
+    #[test]
+    fn meta_http_equiv_content_type_does_not_set_refresh() {
+        // http-equiv="Content-Type" must only set has_charset_meta, not meta_http_equiv_refresh.
+        let html = r#"<!doctype html><html><head>
+            <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert!(!a.meta_http_equiv_refresh, "Content-Type http-equiv must not set meta_http_equiv_refresh");
+        assert!(a.has_charset_meta, "Content-Type http-equiv must still set has_charset_meta");
     }
 }

@@ -584,6 +584,15 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
             ),
         });
     }
+    if analysis.meta_http_equiv_refresh {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "meta_http_equiv_refresh",
+            budget: 0,
+            actual: 1,
+            detail: "<meta http-equiv=\"refresh\"> present — delays rendering; use server-side redirects".into(),
+        });
+    }
     vios
 }
 
@@ -1603,7 +1612,39 @@ mod tests {
     }
 
     #[test]
-    fn theater_violations_all_seven_fire() {
+    fn theater_violations_meta_http_equiv_refresh_fires() {
+        let analysis = HtmlAnalysis {
+            meta_http_equiv_refresh: true,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "meta_http_equiv_refresh");
+        assert_eq!(vios[0].kind, ViolationKind::Theater);
+        assert_eq!(vios[0].actual, 1);
+        assert_eq!(
+            vios[0].detail,
+            "<meta http-equiv=\"refresh\"> present — delays rendering; use server-side redirects"
+        );
+    }
+
+    #[test]
+    fn theater_violations_meta_http_equiv_refresh_absent_no_violation() {
+        let analysis = HtmlAnalysis {
+            meta_http_equiv_refresh: false,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        let refresh_vios: Vec<_> = vios.iter().filter(|v| v.metric == "meta_http_equiv_refresh").collect();
+        assert!(refresh_vios.is_empty(), "absent meta_http_equiv_refresh must produce no violation");
+    }
+
+    #[test]
+    fn theater_violations_all_eight_fire() {
         let analysis = HtmlAnalysis {
             lazy_lcp_candidate: true,
             has_viewport_meta: false,
@@ -1612,10 +1653,11 @@ mod tests {
             has_speculation_prerender: true,
             picture_missing_modern_source: 1,
             preload_font_no_crossorigin: 3,
+            meta_http_equiv_refresh: true,
             ..Default::default()
         };
         let vios = theater_violations(&analysis);
-        assert_eq!(vios.len(), 7, "all seven theater checks must fire");
+        assert_eq!(vios.len(), 8, "all eight theater checks must fire");
         let metrics: Vec<&str> = vios.iter().map(|v| v.metric).collect();
         assert!(metrics.contains(&"lazy_lcp"));
         assert!(metrics.contains(&"viewport_meta"));
@@ -1624,6 +1666,7 @@ mod tests {
         assert!(metrics.contains(&"speculation_prerender"));
         assert!(metrics.contains(&"picture_no_modern_source"));
         assert!(metrics.contains(&"preload_font_no_crossorigin"));
+        assert!(metrics.contains(&"meta_http_equiv_refresh"));
     }
 
     // ---- count_legacy_images ----
