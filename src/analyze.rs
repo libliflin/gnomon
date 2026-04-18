@@ -205,7 +205,6 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
     }
 
     // <img>
-    let mut first_img = true;
     for el in doc.select(&sel_img) {
         let src = el.value().attr("src").or_else(|| el.value().attr("data-src"));
         let has_w = el.value().attr("width").is_some();
@@ -215,12 +214,19 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
             .attr("loading")
             .map(|v| v.eq_ignore_ascii_case("lazy"))
             .unwrap_or(false);
+        let high_priority = el
+            .value()
+            .attr("fetchpriority")
+            .map(|v| v.eq_ignore_ascii_case("high"))
+            .unwrap_or(false);
         if !has_w || !has_h {
             a.img_missing_dimensions += 1;
         }
-        if first_img && lazy {
-            // Anti-theater: the first <img> is a plausible LCP candidate; if it
-            // is lazy-loaded this is often a Lighthouse-gaming trick.
+        if high_priority && lazy {
+            // Anti-theater: fetchpriority="high" is the author's explicit declaration
+            // that this image is the LCP candidate. loading="lazy" simultaneously defers
+            // its fetch. This contradictory combination is unambiguous theater — it signals
+            // LCP priority to measurement tools while deferring the actual fetch.
             a.lazy_lcp_candidate = true;
         }
         if let Some(s) = src
@@ -229,11 +235,10 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
             a.image_urls.push(ResourceRef {
                 url: resolved,
                 render_blocking: false,
-                is_lcp_candidate: first_img,
+                is_lcp_candidate: high_priority,
                 is_lazy: lazy,
             });
         }
-        first_img = false;
     }
 
     // <picture> format negotiation: count elements with no WebP or AVIF <source>.
@@ -376,22 +381,47 @@ mod tests {
     // ── lazy_lcp_candidate ────────────────────────────────────────────────────
 
     #[test]
-    fn lazy_lcp_candidate_fires_on_first_lazy_img() {
+    fn lazy_lcp_candidate_fires_on_fetchpriority_high_and_lazy() {
+        // The theater pattern: fetchpriority="high" declares the image as the LCP candidate
+        // to measurement tools; loading="lazy" simultaneously defers the fetch.
         let html = r#"<!doctype html><html><body>
-            <img src="/hero.jpg" loading="lazy" width="800" height="400">
+            <img src="/hero.jpg" fetchpriority="high" loading="lazy" width="800" height="400">
         </body></html>"#;
         let a = analyze(html);
-        assert!(a.lazy_lcp_candidate, "first lazy <img> must set lazy_lcp_candidate");
+        assert!(a.lazy_lcp_candidate, "fetchpriority=high + loading=lazy must set lazy_lcp_candidate");
     }
 
     #[test]
-    fn lazy_lcp_candidate_clear_when_first_img_not_lazy() {
+    fn lazy_lcp_candidate_clear_when_lazy_only_no_fetchpriority() {
+        // Gov.UK false-positive: first <img> is lazy but has no fetchpriority="high".
+        // This is legitimate deferral of a non-LCP image — must not set lazy_lcp_candidate.
         let html = r#"<!doctype html><html><body>
-            <img src="/hero.jpg" width="800" height="400">
-            <img src="/thumb.jpg" loading="lazy" width="200" height="100">
+            <img src="/icon.png" loading="lazy" width="60" height="60">
         </body></html>"#;
         let a = analyze(html);
-        assert!(!a.lazy_lcp_candidate, "first eager <img> must not set lazy_lcp_candidate");
+        assert!(!a.lazy_lcp_candidate, "loading=lazy alone (no fetchpriority=high) must not set lazy_lcp_candidate");
+    }
+
+    #[test]
+    fn lazy_lcp_candidate_clear_when_fetchpriority_high_but_not_lazy() {
+        // fetchpriority="high" on an eager image is correct behavior, not theater.
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg" fetchpriority="high" width="800" height="400">
+        </body></html>"#;
+        let a = analyze(html);
+        assert!(!a.lazy_lcp_candidate, "fetchpriority=high without loading=lazy must not set lazy_lcp_candidate");
+    }
+
+    #[test]
+    fn lazy_lcp_candidate_not_first_img_matters() {
+        // The check is not position-based: any img with fetchpriority=high + lazy fires,
+        // even if it is not the first image in DOM order.
+        let html = r#"<!doctype html><html><body>
+            <img src="/icon.png" loading="lazy" width="60" height="60">
+            <img src="/hero.jpg" fetchpriority="high" loading="lazy" width="800" height="400">
+        </body></html>"#;
+        let a = analyze(html);
+        assert!(a.lazy_lcp_candidate, "fetchpriority=high + lazy on any img must set lazy_lcp_candidate");
     }
 
     // ── render_blocking_in_head ───────────────────────────────────────────────

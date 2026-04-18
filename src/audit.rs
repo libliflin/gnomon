@@ -517,7 +517,7 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
             metric: "lazy_lcp",
             budget: 0,
             actual: 1,
-            detail: "first <img> has loading=\"lazy\" — lazy-loaded LCP candidate delays first render".into(),
+            detail: "<img fetchpriority=\"high\" has loading=\"lazy\" — explicit LCP candidate deferred at fetch time".into(),
         });
     }
     if !analysis.has_viewport_meta {
@@ -1251,7 +1251,7 @@ mod tests {
         assert_eq!(vios[0].kind, ViolationKind::Theater);
         assert_eq!(
             vios[0].detail,
-            "first <img> has loading=\"lazy\" — lazy-loaded LCP candidate delays first render"
+            "<img fetchpriority=\"high\" has loading=\"lazy\" — explicit LCP candidate deferred at fetch time"
         );
     }
 
