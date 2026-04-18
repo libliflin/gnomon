@@ -1080,6 +1080,33 @@ mod tests {
         assert!(detail.contains("js"), "js must appear: {detail}");
     }
 
+    #[test]
+    fn total_bytes_violation_omits_zero_byte_categories() {
+        // Simulate audit_url's construction: js, images, fonts are zero and must be
+        // filtered by `retain`. Only html and css contribute. Pins that the retain
+        // condition in audit_url keeps zero-byte categories out of the detail string.
+        let mut contributors: Vec<(String, u64)> = vec![
+            ("html".to_string(), 8_192u64),
+            ("css".to_string(), 20_480u64),
+            ("js".to_string(), 0u64),
+            ("images".to_string(), 0u64),
+            ("fonts".to_string(), 0u64),
+        ];
+        contributors.retain(|&(_, bytes)| bytes > 0);
+        contributors.sort_unstable_by_key(|&(_, bytes)| std::cmp::Reverse(bytes));
+        let total: u64 = 8_192 + 20_480;
+        let budget: u64 = 25_600; // 25 KiB — over by ~3 KiB
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "total", total, budget, &contributors);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(detail.contains("css"), "css must appear: {detail}");
+        assert!(detail.contains("html"), "html must appear: {detail}");
+        assert!(!detail.contains("js"), "zero-byte js must not appear: {detail}");
+        assert!(!detail.contains("images"), "zero-byte images must not appear: {detail}");
+        assert!(!detail.contains("fonts"), "zero-byte fonts must not appear: {detail}");
+    }
+
     // ---- theater_violations ----
 
     #[test]
