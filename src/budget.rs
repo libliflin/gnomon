@@ -378,8 +378,11 @@ mod tests {
     /// Restores the working directory on drop — panic-safe.
     ///
     /// Without this, a panic inside a CWD test leaves the process in the temp
-    /// directory, poisons `CWD_LOCK`, and causes every subsequent CWD test to
-    /// fail with a misleading lock-poison error rather than the real failure.
+    /// directory. Subsequent CWD tests then run with the wrong working directory,
+    /// corrupting their assertions — even after `CWD_LOCK` is re-acquired.
+    /// (`CWD_LOCK` is still poisoned by the panic; `CwdGuard` doesn't prevent
+    /// that. It prevents the wrong CWD from bleeding into tests that don't hold
+    /// the lock.)
     struct CwdGuard(std::path::PathBuf);
     impl CwdGuard {
         fn new() -> Self {
