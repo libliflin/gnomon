@@ -417,6 +417,19 @@ mod tests {
         assert_eq!(a.render_blocking_in_head, 0);
     }
 
+    #[test]
+    fn preload_as_script_is_not_render_blocking() {
+        // preload-as-script hints the fetch but does not execute the script — not render-blocking.
+        // This is the anti-theater boundary: <link rel=preload as=script> ≠ <script src=...>.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="script" href="/app.js">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+        assert_eq!(a.script_urls.len(), 1);
+        assert!(!a.script_urls[0].render_blocking);
+    }
+
     // ── async script ──────────────────────────────────────────────────────────
 
     #[test]
