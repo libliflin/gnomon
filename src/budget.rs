@@ -398,6 +398,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn preset_toml_closing_note_appears_after_count_block() {
+        // The note must be at the end of the file, not mid-file. A refactor that
+        // accidentally hoists it into the [bytes] section would confuse the reader.
+        let out = preset_toml(PresetName::Insley);
+        let note_pos = out.find("# NOTE (v0.0.2)").expect("note not found");
+        let count_pos = out.find("[count]").expect("[count] block not found");
+        assert!(note_pos > count_pos, "note must appear after [count] block, not mid-file");
+    }
+
+    #[test]
+    fn preset_toml_closing_note_present_for_mcmaster() {
+        // Pin the note for mcmaster — the preset in the cycle's journey (Maya's team).
+        let out = preset_toml(PresetName::Mcmaster);
+        assert!(
+            out.contains("# NOTE (v0.0.2)"),
+            "v0.0.2 note missing from mcmaster preset: {out}"
+        );
+    }
+
     // ── resolve_budget: auto-discovery ──────────────────────────────────────
 
     /// CWD is process-global state. Serialize all tests that touch it.
