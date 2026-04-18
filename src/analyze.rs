@@ -920,6 +920,32 @@ mod tests {
         assert_eq!(a.picture_missing_modern_source, 1);
     }
 
+    #[test]
+    fn picture_missing_modern_source_counts_picture_with_no_sources() {
+        // A <picture> with only an <img> fallback and no <source> children has
+        // no format negotiation at all — counts as missing modern source.
+        let html = r#"<!doctype html><html><body>
+            <picture>
+                <img src="/hero.jpg" width="800" height="400">
+            </picture>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 1);
+    }
+
+    #[test]
+    fn picture_missing_modern_source_zero_when_type_is_uppercase_webp() {
+        // to_ascii_lowercase() must normalise the type attribute before comparison.
+        let html = r#"<!doctype html><html><body>
+            <picture>
+                <source srcset="/image.webp" type="image/WEBP">
+                <img src="/image.jpg" width="800" height="400">
+            </picture>
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.picture_missing_modern_source, 0);
+    }
+
     // ── meta tags ─────────────────────────────────────────────────────────────
 
     #[test]
