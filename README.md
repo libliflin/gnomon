@@ -17,11 +17,19 @@ cargo install gnomon
 ## Use
 
 ```sh
-gnomon audit https://example.com                     # default: insley preset (strict)
+gnomon audit https://example.com                     # auto-loads ./gnomon.toml; falls back to insley preset
 gnomon audit https://example.com --preset mcmaster   # looser, still opinionated
 gnomon audit https://example.com --format json       # for CI
+gnomon audit https://example.com --config path/to/gnomon.toml  # explicit config path
 gnomon presets                                        # print the built-in budgets
 gnomon budget-init --preset mcmaster                  # write a starter gnomon.toml
+```
+
+When `gnomon.toml` exists in the working directory, it is loaded automatically — no `--config` flag required. The common CI workflow is:
+
+```sh
+gnomon budget-init --preset mcmaster   # once: commit gnomon.toml to the repo
+gnomon audit https://staging.your-site.com  # CI: picks up the committed config
 ```
 
 Exit codes:
