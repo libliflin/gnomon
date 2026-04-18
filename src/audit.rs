@@ -1518,6 +1518,28 @@ mod tests {
         assert!(metrics.contains(&"img_dimensions"), "img_dimensions must fire");
     }
 
+    #[test]
+    fn theater_violations_all_six_fire() {
+        let analysis = HtmlAnalysis {
+            lazy_lcp_candidate: true,
+            has_viewport_meta: false,
+            has_charset_meta: false,
+            img_missing_dimensions: 2,
+            has_speculation_prerender: true,
+            picture_missing_modern_source: 1,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 6, "all six theater checks must fire");
+        let metrics: Vec<&str> = vios.iter().map(|v| v.metric).collect();
+        assert!(metrics.contains(&"lazy_lcp"));
+        assert!(metrics.contains(&"viewport_meta"));
+        assert!(metrics.contains(&"charset_meta"));
+        assert!(metrics.contains(&"img_dimensions"));
+        assert!(metrics.contains(&"speculation_prerender"));
+        assert!(metrics.contains(&"picture_no_modern_source"));
+    }
+
     // ---- count_legacy_images ----
 
     fn fetched_with_ct(content_type: Option<&str>, error: Option<&str>) -> Fetched {
