@@ -1,17 +1,15 @@
-Everything is in place. Here's what was written and why:
+Done. Here's what was written:
 
----
+**`.lathe/agents/champion.md`** — the runtime playbook. Five stakeholders with concrete first-encounter journeys, emotional signals per stakeholder, tension pairs with resolution signals, the two-source ranking model (CI floor → lived experience), maturation guidance tied to PLAN.md §15, the output format template verbatim, and ownership of inputs.
 
-**`.lathe/agents/champion.md`** — The runtime playbook. Five stakeholders grounded in what the code actually reveals: the CI integrator who copies the Actions snippet, the frontend developer who hits a CI failure they didn't cause, the evaluator deciding whether gnomon is serious, the contributor adding a theater rule, and the maintainer keeping the codebase coherent. Each has a first-encounter journey, a trust/walk-away signal, and a specific emotional signal derived from who they are — not from taste. The ranking section uses the two-source model (floor, then lived experience) with explicit language calling out the layer-ladder temptation. The journey output template is verbatim, with the playbook/report distinction named clearly.
+**`.lathe/skills/journeys.md`** — ten-step concrete journeys for each stakeholder, including where momentum builds, where it breaks, and a stretch target that walks to the project's current ambition wall.
 
-**`.lathe/skills/testing.md`** — How gnomon tests: all unit tests in `#[cfg(test)]` modules, key patterns (boundary tests, top-2 contributors, inline synthetic entries, CWD serialization), and what's not yet tested (integration against live URLs, benchmarks).
+**`.lathe/skills/architecture.md`** — the detection pipeline (HtmlAnalysis → theater_violations), what's implemented vs. what's in PLAN.md but not yet built, the brotli recompression model, and the key seam for adding new checks.
 
-**`.lathe/skills/build.md`** — The three commands, the binary structure, the release profile, distribution targets, and the declared performance budget for gnomon itself.
+**`.lathe/skills/testing.md`** — the two-test pattern (detect in `analyze.rs`, violation in `audit.rs`), what's intentionally not tested, and the detail string conventions.
 
-**`.lathe/skills/architecture.md`** — Module map with I/O column, the six load-bearing decisions (brotli recompression, Aho-Corasick, inline attribution, theater as pure function, DOM-based scraper, naive eTLD+1), violation assembly order, and a gap table of what PLAN.md describes vs. what exists in v0.0.2.
+**`.lathe/skills/build.md`** — dev commands, CI config, non-obvious dependency choices (rustls, brotli recompression crate).
 
-**`.lathe/skills/journeys.md`** — Concrete, step-by-step journeys for all five stakeholders, with the specific moments where friction or delight would show up — written to be walkable, not just describable.
+**`.lathe/skills/domains.md`** — six domains (HTML parsing, anti-theater, HTTP/brotli, SARIF, Web Vitals, Rust), each with authoritative source and the specific boundary confusions that cause bugs.
 
-**`.lathe/skills/domains.md`** — Seven domain boundaries: HTTP/content negotiation, HTML parsing, performance budgets, anti-theater rules, forbidden list, SARIF, and Rust/crate ecosystem. Each names what the domain covers, what's authoritative, and where the boundary creates confusion.
-
-**`.lathe/alignment-summary.md`** — For you: the stakeholder map, emotional signals, tensions, and four things that could be wrong — including the staging-URL blocker for the CI integrator, the PLAN.md expectation gap for the evaluator, and the security note on branch protection.
+**`.lathe/alignment-summary.md`** — for you. Flags four things that could be wrong: `ambition.md` is missing, `brand.md` is missing, justification validation isn't enforced, and the snapshot doesn't check remote CI status.

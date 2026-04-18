@@ -1,10 +1,17 @@
-Written to `.lathe/agents/builder.md`. Here's what the file encodes:
+`.lathe/agents/builder.md` is written. Here's what it encodes:
 
-- **Identity and posture** framed to complement the champion's empathy-first worldview — the champion names what and why, the builder brings it into being well.
-- **The dialog model** — round 1 always contributes, subsequent rounds read the verifier's additions and respond from a creative lens, convergence ends the cycle.
-- **Module map** — the nine source files with their responsibilities, so the builder knows where to look without spelunking each round.
-- **Three contribution paths** — the exact test templates to copy for anti-theater rules, forbidden domains, and count violations, matching what CONTRIBUTING.md tells human contributors.
-- **The two intentionally-informational fields** (`preload_hint_count`, `preconnect_targets`) called out explicitly so the builder never wires a violation for them.
-- **Build validation gate** — `cargo test && cargo clippy -- -D warnings` before every push, matching the CI jobs.
-- **Commit message convention** — derived from the recent git log, conventional commits with lowercase imperative style.
-- **Brand guidance** scoped to gnomon's tone-sensitive surfaces — especially `Violation.detail`, which is what the frontend developer reads when CI fails on their PR.
+**Identity and posture** — creative synthesis, named directly, aligned with the champion's advocacy framing.
+
+**The dialog** — round 1 brings the goal at full scope; round 2+ responds to the verifier or closes out. Convergence is the signal, not a VERDICT.
+
+**Project-specific conventions** (the durable part):
+- Module responsibilities table — where each concern lives
+- The exact four-step anti-theater contribution path (`HtmlAnalysis` field → `analyze_html` detection → `theater_violations` branch → tests in both files)
+- Test style: `assert_eq!(vios[0].detail, "exact string")` pinning is correct and expected
+- `..Default::default()` for `HtmlAnalysis` construction in tests
+- Violation detail string format: em-dash connector, specific thing leads, no hedging
+- The three validation commands and what "clean" means for each
+
+**Brand tints** — encoded as concrete rules with examples drawn from the actual codebase, not abstract principles.
+
+**Ambition tints** — calls out the "detected but silent" gap pattern by name, explains why structural closure beats instance patches.

@@ -1,33 +1,39 @@
 # Brand
 
-**Identity.** Plainspoken enforcer with a craftsman's disposition. Short sentences, specific numbers, named culprits. Convictions are stated once and not apologized for — the strictness is the product, not a side effect. From `PLAN.md`: "It is unapologetically opinionated. It ships hostile defaults. It fails closed." From `cli.rs:11`: `about = "Performance budget auditor. A CI gate, not a dashboard."` From `PLAN.md §6`: "Hostile defaults are the *product*. If they feel rude, it is because they are doing their job." The voice is working-developer, not consultant.
+## Identity
+
+Precise, working-developer voice — leads with the specific thing, ends with the consequence or the next step, never hedges in between. Named after a part that *reveals* rather than scores, and that logic runs through every surface: the output tells you what the site is actually doing, not how it performs on a rubric (from `README.md` lines 3–8: "A gnomon is the blade on a sundial — the part that casts the shadow. It doesn't tell you the time; it reveals it" → "It does not produce a score out of 100. It produces pass or fail"). Confident about what it is; blunt about what it isn't.
 
 ---
 
 ## How we speak
 
-**When we say no:** Flat, active, complete. No hedging, no apology, no alternative suggested — unless the alternative is "use a different tool." From `PLAN.md §11`: "Flags that do not exist and will not be added: `--warn-only`, `--skip <check>`, `--allow-regressions`, `--soft-fail`, `--bypass`, `--force`. If a user wants any of these, they are looking for a different tool." From `PLAN.md §6`: "No `--warn-only` mode. Does not exist. Will not be added. A PR proposing it will be closed." Three sentences. Done.
+**When we say no** (forbidden list, design limits): name the thing, then name the consequence or the alternative — nothing in between. `"Google Tag Manager — opens the door to anything"`, `"Intercom chat widget — use a mailto link"`, `"jQuery CDN — justify why in 2026"` (from `src/forbidden.rs` lines 9–32). We don't moralize; we state. When the refusal implies an alternative we name it. When the problem is historical fact we cite it: `"polyfill.io — compromised in 2024"`.
 
-**When we fail (violations):** Lead with the delta, name the culprit. From `audit.rs` violation format, pinned in test at line 1175: `"3 KiB over 100 KiB budget — images (82 KiB), css (13 KiB)"`. The pattern is always: amount over budget → em dash → the file causing it. No softening language. No "consider reducing." The violation is the instruction. On theater: call it what it is. From `audit.rs:519`: `"first <img> has loading=\"lazy\" — likely LCP gaming"`. We name the trick, not just the symptom.
+**When we fail** (error messages): tool name prefix, then what went wrong, then the offending value. `"gnomon: --url 'foo' is not a valid URL: ..."`, `"gnomon: root fetch of {url_str} returned HTTP {status}"` (from `src/audit.rs` lines 48, 54; `src/main.rs` lines 15, 24). Never apologetic. Surfaces the thing that failed so the user can act without re-running with verbose flags.
 
-**When we explain:** State the fact, then the mechanism, in one sentence. From `audit.rs:551`: `"missing <meta charset> or http-equiv Content-Type — forces encoding sniff"`. From `audit.rs:539`: `"3 <img> element(s) missing explicit width/height — layout shift (CLS)"`. The em dash separates what from why. Never longer than one sentence. Never narrative.
+**When we detect a violation** (violation detail strings): observation — consequence, em-dash as the connector. Count or element first, never category first. `"first <img> has loading=\"lazy\" — lazy-loaded LCP candidate delays first render"`, `"N image(s) served as JPEG/PNG/GIF — serve AVIF or WebP to reduce transfer size"`, `"3 KiB over 100 KiB budget — images (82 KiB), css (13 KiB)"` (from `src/audit.rs` lines 520, 572, and the `bytes_check` function). The specific thing is always legible before the explanation arrives. No violation says "performance issue detected."
 
-**When we succeed:** Quiet. From `report.rs:80`: `println!("{}  {}", "PASS".green().bold(), "all budgets met".dimmed())`. PASS is bold and green; the explanation is dimmed. No celebration — passing is the expected state, not a surprise.
+**When we explain** (README inline explanations, code comments): we give the reason, not just the rule. `"Running gnomon twice is the correct pattern when you want both annotations and enforcement"` (from `README.md` line 71). `"Naive eTLD+1 for third-party comparison. Falls short on .co.uk etc., but good enough for v0.0.2 — the error case is 'we undercount third parties on multi-suffix TLDs,' which means we're generous to the site, not harsh"` (from `src/audit.rs` lines 596–600). We name which direction our limitations lean so the reader can trust our judgment.
 
-**When we onboard a new user:** Same voice as the tool itself. From `README.md:4–8`: opens with the sundial metaphor, then immediately: "It does not produce a score out of 100. It produces pass or fail." From `PLAN.md`: "If that is not the tradeoff you want, use another tool." No welcome mat, no warmth, no feature list. The tool introduces itself by stating its position.
+**When we pass** (verdict): flat, no exclamation. `"PASS  all budgets met"` (from `src/report.rs` line 80). The pass speaks for itself. We do not celebrate loudly; we confirm quietly. The work of celebration belongs to the engineer who fixed the thing.
+
+**When we define ourselves**: we use the contrast. `"A CI gate, not a dashboard"` (from `Cargo.toml` description; `cli.rs` line 11). We repeat binary statements when they need to land: `"It does not produce a score. It produces pass or fail."` appears in the README, the CLI `about`, and the CLI `long_about` (from `README.md` lines 6–8, `cli.rs` lines 11–15). Repetition here is rhetorical, not redundant — the message is the thing we're correcting in how people think about performance tooling.
 
 ---
 
 ## The thing we'd never do
 
-Bury the actionable signal under prose or leave the user hunting for which file caused the violation. Every violation leads with the number and names the culprit: `"33 KiB over — main.css (28 KiB)"`, `"1 over budget of 0 — serif-regular.woff2 (45 KiB)"`. The champion cycle 18 commit message names the principle directly: "budget owner — total bytes violation names nothing, category contributors would make it pastable." Pastable is the test: a violation must be copy-pasteable into a Slack message or PR comment and stand alone without the surrounding report.
+Produce a violation that buries the actionable detail under a category label. We never say "js performance issue" or "image format problem" when we can say `"first <img> has loading=\"lazy\" — lazy-loaded LCP candidate delays first render"`. The metric name (`lazy_lcp`, `img_format`, `viewport_meta`) is a machine key; the detail string is what the engineer reads. The detail string always leads with the specific element, the count, or the resource filename — never with the category (from `src/audit.rs` throughout `theater_violations` and `bytes_check`). If a violation detail string could belong to any site, it hasn't been written yet.
 
 ---
 
 ## Signals to preserve
 
-- **Lowercase imperative commit messages with a type prefix.** `feat: add SARIF 2.1.0 output format`, `test: pin case-insensitive content-type matching`, `docs: correct SARIF annotation placement`. No sentence case, no trailing period, no drama.
+**Em-dash as the observation–consequence connector in violation strings.** Not a colon, not a parenthetical, not a period and new sentence. The em-dash creates a single readable unit: what the site is doing, then what it costs. Breaking this rhythm weakens every violation string that follows it (from `src/audit.rs` lines 520, 529, 539, 550, 572, and all detail helper functions).
 
-- **Violations lead with the delta, then the culprit, separated by an em dash.** `"N KiB over Y KiB budget — filename (size)"`. Never reversed. The champion and builder reading this brand file should treat violations that don't follow this pattern as off-brand — the user gets the number before they have to look up the budget.
+**Lowercase snake_case metric names.** `lazy_lcp`, `img_format`, `viewport_meta`, `charset_meta` — not "Lazy LCP Candidate" or "Missing Viewport Tag." The machine-facing names stay technical and flat; the human-facing detail strings carry the explanation. Never let marketing language into a metric name (from `src/audit.rs` throughout).
 
-- **Inline comments explain the adversarial case.** From `audit.rs:104–105`: `// inline styles / scripts roll into CSS/JS budgets so a site that inlines everything to "hide" bytes from external-resource checks still gets caught`. From `audit.rs:597–599`: `// the error case is "we undercount third parties on multi-suffix TLDs," which means we're generous to the site, not harsh`. Comments explain *why the rule exists and what it's catching*, not just what the code does. This extends to SARIF comments, budget file comments, and CONTRIBUTING.md.
+**Commit messages: `type: lowercase imperative phrase`, no period, no emoji.** `fix: remove hedge from lazy_lcp violation detail string`, `docs: explain why SARIF locations use URL not file path`, `feat: add SARIF 2.1.0 output format` (from git log). The commit that removes a hedge from a violation detail string is itself hedgeless. The discipline is consistent.
+
+**The "not a X" definition pattern.** When introducing what gnomon is, we name what it's not before we explain what it is, and only when that contrast does real work. "A CI gate, not a dashboard" earns its existence because the alternative — a score out of 100 — is what the reader already expects and what we're replacing in their mental model (from `README.md` line 7, `Cargo.toml` description, `cli.rs` line 11).

@@ -1,0 +1,17 @@
+Done. Here's what was written:
+
+**`.lathe/ambition.md`** — four sections:
+
+- **Destination**: gnomon is the CI gate teams forget about — the v1.0 endpoint is `gnomon audit https://insley.com` passing, with crawl, watch, and insley-web as an integrated test. Cited from README.md line 5, PLAN.md §1, §15, and §17.
+
+- **The gap** — four concrete distances:
+  1. No `--dir` mode; every audit still requires a live deployed URL (v0.1 target)
+  2. Justification/expiry enforcement is documented but not implemented; the budget owner's authority is a promise, not a fact (v0.2 target)
+  3. Only ring 1 of the three-ring measurement model is live; predicted vitals and `--measure` are documented but absent (v0.3/v0.4)
+  4. The "detected but silent" structural decoupling between detection and violation pipelines persists
+
+- **What winning looks like**: `--dir` landing, justification enforcement going live, and `gnomon audit https://insley.com` returning PASS. Each stated as on-ambition vs. the polish work that can masquerade as progress.
+
+- **Velocity signal**: SARIF was a real structural addition; the subsequent test-pinning and docs-fix run looks like consolidation mode — the pattern the insley-web author stakeholder explicitly watches for.
+
+The **Ambition section** has been appended to `alignment-summary.md` for your review before the first cycle runs.

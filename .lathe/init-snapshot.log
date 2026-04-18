@@ -1,8 +1,10 @@
-Script runs cleanly. Output is 1,574 chars on the happy path — well inside the 6K cap with plenty of headroom for failure details if needed.
+Output is 1,434 characters — well within the 4,000 target with plenty of headroom even if a build or test failure expands the output.
 
-`.lathe/snapshot.sh` covers:
-- **Git status + recent commits** — change signals each cycle
-- **Build** (`cargo build`) — one line OK, expands on failure
-- **Tests** (`cargo test`) — Pass/Fail/Ignored counts; failure details expand
-- **Clippy** (`cargo clippy -D warnings`) — mirrors what CI enforces
-- **CI config** — lists workflow files
+Script is at `.lathe/snapshot.sh`. Here's what it does:
+
+- **Build**: `cargo build --workspace` → "OK — builds clean" on success, errors on failure
+- **Tests**: `cargo test --workspace` → aggregates all `test result:` lines into "Pass: 144 | Fail: 0 | Skip: 0"; expands failure details only when something fails
+- **Clippy**: `cargo clippy -- -D warnings` → "OK — no warnings" or error count + first 10 errors
+- **CI**: lists `.github/workflows/*.yml` files
+- macOS-safe `timeout` via `gtimeout` fallback
+- `set -euo pipefail` with `|| true` guards so a failing test doesn't abort the script

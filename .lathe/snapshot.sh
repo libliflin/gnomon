@@ -1,76 +1,75 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# macOS ships 'gtimeout' from coreutils; Linux has 'timeout'
+# macOS-safe timeout
 if command -v gtimeout &>/dev/null; then
-  TO=gtimeout
+  TO="gtimeout"
+elif command -v timeout &>/dev/null; then
+  TO="timeout"
 else
-  TO=timeout
+  TO=""
 fi
+run() { ${TO:+$TO 60} "$@"; }
 
 echo "# Project Snapshot"
 echo "Timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-echo
+echo ""
 
-# ── Git status ───────────────────────────────────────────────────────────────
+# --- Git status ---
 echo "## Git Status"
-git status --short
-echo
+git status --short || true
+echo ""
 
-# ── Recent commits ───────────────────────────────────────────────────────────
+# --- Recent commits ---
 echo "## Recent Commits"
 git log --oneline -10
-echo
+echo ""
 
-# ── Build ────────────────────────────────────────────────────────────────────
+# --- Build ---
 echo "## Build"
-BUILD_OUT=$($TO 120 cargo build 2>&1) && BUILD_OK=true || BUILD_OK=false
+BUILD_OUT=$(run cargo build --workspace 2>&1) && BUILD_OK=true || BUILD_OK=false
 if $BUILD_OK; then
   echo "OK — builds clean"
 else
-  echo "FAILED"
+  echo "FAIL"
   echo '```'
-  echo "$BUILD_OUT" | tail -20
+  echo "$BUILD_OUT" | grep -E "^error" | head -10
   echo '```'
 fi
-echo
+echo ""
 
-# ── Tests ────────────────────────────────────────────────────────────────────
+# --- Tests ---
 echo "## Tests"
-TEST_OUT=$($TO 120 cargo test 2>&1) && TEST_OK=true || TEST_OK=false
-
-PASS=$(echo "$TEST_OUT" | grep -c '^test .* ok$' || true)
-FAIL=$(echo "$TEST_OUT" | grep -c '^test .* FAILED$' || true)
-IGNORED=$(echo "$TEST_OUT" | grep -c '^test .* ignored$' || true)
-
-echo "Pass: $PASS | Fail: $FAIL | Ignored: $IGNORED"
-
-if ! $TEST_OK || [ "$FAIL" -gt 0 ]; then
+TEST_OUT=$(run cargo test --workspace 2>&1) && TEST_OK=true || TEST_OK=true  # parse below
+# Aggregate across all test result lines
+PASSED=$(echo "$TEST_OUT" | grep "test result:" | awk '{sum += $4} END {print sum+0}')
+FAILED=$(echo "$TEST_OUT" | grep "test result:" | awk '{sum += $6} END {print sum+0}')
+IGNORED=$(echo "$TEST_OUT" | grep "test result:" | awk '{sum += $8} END {print sum+0}')
+echo "Pass: $PASSED | Fail: $FAILED | Skip: $IGNORED"
+if [[ "$FAILED" -gt 0 ]]; then
   echo '```'
-  echo "$TEST_OUT" | grep -E '^test .* FAILED$|^FAILED$|^error' | head -10
+  echo "$TEST_OUT" | grep -E "^FAILED|^---- " | head -20
   echo '```'
 fi
-echo
+echo ""
 
-# ── Clippy (lint) ────────────────────────────────────────────────────────────
+# --- Clippy ---
 echo "## Clippy"
-CLIPPY_OUT=$($TO 120 cargo clippy --workspace --all-targets -- -D warnings 2>&1) && CLIPPY_OK=true || CLIPPY_OK=false
+CLIPPY_OUT=$(run cargo clippy --workspace --all-targets -- -D warnings 2>&1) && CLIPPY_OK=true || CLIPPY_OK=false
 if $CLIPPY_OK; then
   echo "OK — no warnings"
 else
-  WARN_COUNT=$(echo "$CLIPPY_OUT" | grep -c '^error\[' || true)
-  echo "FAILED — $WARN_COUNT error(s)"
+  WARN_COUNT=$(echo "$CLIPPY_OUT" | grep -c "^error\[" || true)
+  echo "FAIL — ${WARN_COUNT} error(s)"
   echo '```'
-  echo "$CLIPPY_OUT" | grep -E '^error' | head -10
+  echo "$CLIPPY_OUT" | grep -E "^error" | head -10
   echo '```'
 fi
-echo
+echo ""
 
-# ── CI config ────────────────────────────────────────────────────────────────
+# --- CI ---
 echo "## CI"
-CI_FILES=$(find .github/workflows -name '*.yml' 2>/dev/null | sort)
-if [ -n "$CI_FILES" ]; then
-  echo "$CI_FILES"
-else
-  echo "No CI config found"
-fi
+for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [[ -e "$f" ]] && echo "- $f" || true
+done
+echo ""

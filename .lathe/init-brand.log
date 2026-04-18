@@ -1,15 +1,14 @@
-`.lathe/brand.md` is written. Here's what the evidence said:
+`.lathe/brand.md` written. Here's what the evidence pointed to:
 
-**Identity:** Plainspoken enforcer, working-developer voice. Short sentences, specific numbers, named culprits. The strictness isn't a side effect — it's the product. Anchored in `PLAN.md` ("Hostile defaults are the *product*. If they feel rude, it is because they are doing their job.") and the CLI `about` string ("A CI gate, not a dashboard.").
+**Identity read:** Precise, working-developer voice. Reveals rather than scores — the name is load-bearing, not decorative. The pattern is consistent across every surface.
 
-**The five edge cases, all grounded:**
+**The five edge cases with citations:**
+- **When we say no:** `"jQuery CDN — justify why in 2026"` / `"Intercom chat widget — use a mailto link"` — blunt + consequence or alternative, nothing in between.
+- **When we fail:** `gnomon: --url 'foo' is not a valid URL: ...` — tool prefix, offending value, no apology.
+- **When we detect a violation:** `"first <img> has loading=\"lazy\" — lazy-loaded LCP candidate delays first render"` — specific thing first, consequence after em-dash, never the category label first.
+- **When we explain:** The eTLD+1 comment (`src/audit.rs:596`) that names *which direction* the limitation leans. Honest engineering.
+- **When we pass:** `"PASS  all budgets met"` — flat, no exclamation. Quiet confirmation.
 
-- **When we say no:** Three flat sentences, done. `"Does not exist. Will not be added. A PR proposing it will be closed."` No apology, no alternative offered unless the alternative is "use a different tool."
-- **When we fail:** Delta first, culprit named. `"3 KiB over 100 KiB budget — images (82 KiB), css (13 KiB)"`. On theater: name the trick. `"likely LCP gaming"` — not "potential performance concern."
-- **When we explain:** Fact, em dash, mechanism, one sentence. Never narrative.
-- **When we succeed:** Quiet. `"all budgets met"` in dimmed text. Passing is the expected state.
-- **When we onboard:** Same voice as the tool. Position before features.
+**The anti-pattern named:** A violation that buries the actionable detail under a category label. Every detail string in the project leads with the element, count, or filename. That discipline is the thing to protect.
 
-**The thing we'd never do:** Make the user hunt for which file caused the violation. Violations must be pastable — copy-pasteable into Slack or a PR comment and stand alone. This was the explicit principle behind champion cycle 18.
-
-**Three signals to preserve:** Lowercase imperative commits, delta-first violation format, adversarial-case comments that explain why a rule exists and what it's catching.
+**Three signals to preserve:** Em-dash as the observation–consequence connector, lowercase snake_case metric names, conventional commit style. The commit `fix: remove hedge from lazy_lcp violation detail string` is the most brand-revealing single data point in the repo — the project corrects itself for hedging.
