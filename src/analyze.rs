@@ -706,6 +706,54 @@ mod tests {
         assert_eq!(a.stylesheet_urls[0].url, "https://example.com/main.css");
     }
 
+    // ── preload_hint_count ────────────────────────────────────────────────────
+
+    #[test]
+    fn preload_hint_count_single_preload_is_one() {
+        // Minimal case: one <link rel="preload"> must increment preload_hint_count to 1.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font" href="/serif.woff2" crossorigin>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.preload_hint_count, 1, "one preload hint must set preload_hint_count to 1");
+    }
+
+    #[test]
+    fn preload_hint_count_all_as_variants_are_counted() {
+        // Every as= value (font, image, script, style, and unknown) must
+        // increment preload_hint_count — the field counts <link rel="preload"> tags,
+        // not just specific resource types.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="font"   href="/serif.woff2" crossorigin>
+            <link rel="preload" as="image"  href="/hero.avif">
+            <link rel="preload" as="script" href="/chunk.js">
+            <link rel="preload" as="style"  href="/critical.css">
+            <link rel="preload" as="fetch"  href="/api/init.json" crossorigin>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(
+            a.preload_hint_count, 5,
+            "all five preload as= variants must each increment preload_hint_count"
+        );
+    }
+
+    #[test]
+    fn non_preload_links_do_not_increment_preload_hint_count() {
+        // stylesheet, preconnect, dns-prefetch, and icon are not preload hints —
+        // none of them should touch preload_hint_count.
+        let html = r#"<!doctype html><html><head>
+            <link rel="stylesheet"   href="/main.css">
+            <link rel="preconnect"   href="https://cdn.example.com">
+            <link rel="dns-prefetch" href="https://analytics.example.com">
+            <link rel="icon"         href="/favicon.ico">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(
+            a.preload_hint_count, 0,
+            "stylesheet/preconnect/dns-prefetch/icon links must not increment preload_hint_count"
+        );
+    }
+
     // ── meta tags ─────────────────────────────────────────────────────────────
 
     #[test]

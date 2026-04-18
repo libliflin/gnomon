@@ -40,4 +40,11 @@ The detail function pattern: takes `actual`, `budget`, and a contributor slice; 
 
 ## Good first issues
 
-No known gaps at this time. To find one: scan `HtmlAnalysis` fields in `src/analyze.rs` for fields that are detected and serialized to JSON but have no corresponding branch in `theater_violations` in `src/audit.rs`. Each such field is a candidate anti-theater rule waiting to be wired.
+To find one: scan `HtmlAnalysis` fields in `src/analyze.rs` for fields that are detected and serialized to JSON but have no corresponding branch in `theater_violations` in `src/audit.rs`. Each such field is a candidate anti-theater rule waiting to be wired.
+
+Two fields are **intentionally informational** — they are tracked in the JSON output for tooling consumers but are not theater candidates and must not get violation branches:
+
+- **`preload_hint_count`** — counts `<link rel="preload">` tags. Preloads are a positive performance optimization (they hint the browser to fetch critical resources early). A violation saying "you used preloads" would fail any page doing the right thing.
+- **`preconnect_targets`** — lists `<link rel="preconnect">` and `<link rel="dns-prefetch">` targets. Preconnecting to a CDN origin is a standard performance technique. Presence is not evidence of theater.
+
+If the discovery algorithm points you to either of these fields, this is the explanation.
