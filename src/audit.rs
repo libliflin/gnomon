@@ -207,18 +207,26 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     bytes_check(&mut violations, "total", totals.total_bytes, budget.preset.bytes.total, &[]);
 
     // Count budgets.
-    fn count_check(vios: &mut Vec<Violation>, metric: &'static str, actual: u32, budget: u32) {
-        if actual > budget {
-            vios.push(Violation {
+    {
+        let actual = totals.requests;
+        let bgt = budget.preset.count.requests;
+        if actual > bgt {
+            violations.push(Violation {
                 kind: ViolationKind::Count,
-                metric,
-                budget: budget as u64,
+                metric: "requests",
+                budget: bgt as u64,
                 actual: actual as u64,
-                detail: format!("{} over", actual - budget),
+                detail: requests_count_detail(
+                    actual - bgt,
+                    actual,
+                    &css_resources,
+                    &js_resources,
+                    &image_resources,
+                    &font_resources,
+                ),
             });
         }
     }
-    count_check(&mut violations, "requests", totals.requests, budget.preset.count.requests);
     {
         let actual = totals.third_party_domains;
         let bgt = budget.preset.count.third_party_domains;
@@ -432,6 +440,42 @@ fn fonts_count_detail(over: u32, top: &[(String, u64)]) -> String {
         s.push_str(" — ");
         s.push_str(&contributors.join(", "));
     }
+    s
+}
+
+/// Formats the detail string for a requests count violation.
+/// Shows a per-type breakdown sorted by count descending, omitting zeros.
+/// Inline synthetic entries (identified by the `"(inline "` prefix) are excluded
+/// from type counts — they contribute to totals but are not discrete requests.
+fn requests_count_detail(
+    over: u32,
+    total: u32,
+    css: &[(String, u64)],
+    js: &[(String, u64)],
+    images: &[(String, u64)],
+    fonts: &[(String, u64)],
+) -> String {
+    let css_count = css.iter().filter(|(u, _)| !u.starts_with("(inline ")).count() as u32;
+    let js_count = js.iter().filter(|(u, _)| !u.starts_with("(inline ")).count() as u32;
+    let img_count = images.len() as u32;
+    let font_count = fonts.len() as u32;
+
+    let mut parts: Vec<(&str, u32)> =
+        vec![("js", js_count), ("css", css_count), ("img", img_count), ("font", font_count)];
+    parts.sort_unstable_by_key(|&(_, n)| std::cmp::Reverse(n));
+
+    let parts: Vec<String> = parts
+        .iter()
+        .filter(|&&(_, n)| n > 0)
+        .map(|&(label, n)| format!("{n} {label}"))
+        .collect();
+
+    let mut s = format!("{over} over");
+    if !parts.is_empty() {
+        s.push_str(" — ");
+        s.push_str(&parts.join(", "));
+    }
+    s.push_str(&format!(" ({total} total)"));
     s
 }
 
@@ -780,5 +824,64 @@ mod tests {
             third_party_domains_detail(2, &domains),
             "2 over — google-analytics.com, googletagservices.com, googlesyndication.com"
         );
+    }
+
+    // ---- requests_count_detail ----
+
+    fn make_res(url: &str, bytes: u64) -> (String, u64) {
+        (url.to_string(), bytes)
+    }
+
+    #[test]
+    fn requests_count_detail_all_types() {
+        // 4 js, 2 css, 2 img, 1 font — sorted by count desc, total in parens.
+        let css = vec![make_res("a.css", 100), make_res("b.css", 200)];
+        let js = vec![
+            make_res("a.js", 100),
+            make_res("b.js", 200),
+            make_res("c.js", 300),
+            make_res("d.js", 400),
+        ];
+        let images = vec![make_res("a.png", 100), make_res("b.png", 200)];
+        let fonts = vec![make_res("a.woff2", 100)];
+        // total = 1 html + 4 js + 2 css + 2 img + 1 font = 10
+        let detail = requests_count_detail(4, 10, &css, &js, &images, &fonts);
+        assert_eq!(detail, "4 over — 4 js, 2 css, 2 img, 1 font (10 total)");
+    }
+
+    #[test]
+    fn requests_count_detail_zero_omission() {
+        // Only JS resources; no CSS, images, or fonts. Zeros must not appear.
+        let js = vec![make_res("a.js", 100), make_res("b.js", 200)];
+        let detail = requests_count_detail(1, 3, &[], &js, &[], &[]);
+        assert_eq!(detail, "1 over — 2 js (3 total)");
+    }
+
+    #[test]
+    fn requests_count_detail_single_type() {
+        // Only CSS; one resource over budget.
+        let css = vec![make_res("main.css", 50_000)];
+        let detail = requests_count_detail(1, 2, &css, &[], &[], &[]);
+        assert_eq!(detail, "1 over — 1 css (2 total)");
+    }
+
+    #[test]
+    fn requests_count_detail_inline_exclusion() {
+        // JS resource list contains a synthetic inline entry — it must not count
+        // toward the js type tally (it's not a discrete network request).
+        let js = vec![
+            make_res("https://cdn.example.com/app.js", 40_000),
+            make_res("(inline <script>)", 20_000),
+        ];
+        // actual = 1 html + 1 external js = 2; inline is not a request
+        let detail = requests_count_detail(1, 2, &[], &js, &[], &[]);
+        assert_eq!(detail, "1 over — 1 js (2 total)");
+    }
+
+    #[test]
+    fn requests_count_detail_no_typed_resources() {
+        // All requests are HTML/other (unclassified). No named types, but total still shown.
+        let detail = requests_count_detail(2, 5, &[], &[], &[], &[]);
+        assert_eq!(detail, "2 over (5 total)");
     }
 }
