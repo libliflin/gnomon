@@ -572,6 +572,18 @@ fn theater_violations(analysis: &HtmlAnalysis) -> Vec<Violation> {
             ),
         });
     }
+    if analysis.preload_font_no_crossorigin > 0 {
+        vios.push(Violation {
+            kind: ViolationKind::Theater,
+            metric: "preload_font_no_crossorigin",
+            budget: 0,
+            actual: analysis.preload_font_no_crossorigin as u64,
+            detail: format!(
+                "{} font preload(s) missing crossorigin — browser ignores the hint, font fetched twice",
+                analysis.preload_font_no_crossorigin
+            ),
+        });
+    }
     vios
 }
 
@@ -1538,6 +1550,80 @@ mod tests {
         assert!(metrics.contains(&"img_dimensions"));
         assert!(metrics.contains(&"speculation_prerender"));
         assert!(metrics.contains(&"picture_no_modern_source"));
+    }
+
+    #[test]
+    fn theater_violations_preload_font_no_crossorigin_fires() {
+        let analysis = HtmlAnalysis {
+            preload_font_no_crossorigin: 2,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "preload_font_no_crossorigin");
+        assert_eq!(vios[0].kind, ViolationKind::Theater);
+        assert_eq!(vios[0].actual, 2);
+        assert_eq!(
+            vios[0].detail,
+            "2 font preload(s) missing crossorigin — browser ignores the hint, font fetched twice"
+        );
+    }
+
+    #[test]
+    fn theater_violations_preload_font_no_crossorigin_zero_no_violation() {
+        let analysis = HtmlAnalysis {
+            preload_font_no_crossorigin: 0,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        let font_vios: Vec<_> = vios.iter().filter(|v| v.metric == "preload_font_no_crossorigin").collect();
+        assert!(font_vios.is_empty(), "zero preload_font_no_crossorigin must produce no violation");
+    }
+
+    #[test]
+    fn theater_violations_preload_font_no_crossorigin_single() {
+        let analysis = HtmlAnalysis {
+            preload_font_no_crossorigin: 1,
+            has_viewport_meta: true,
+            has_charset_meta: true,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 1);
+        assert_eq!(vios[0].metric, "preload_font_no_crossorigin");
+        assert_eq!(vios[0].actual, 1);
+        assert_eq!(
+            vios[0].detail,
+            "1 font preload(s) missing crossorigin — browser ignores the hint, font fetched twice"
+        );
+    }
+
+    #[test]
+    fn theater_violations_all_seven_fire() {
+        let analysis = HtmlAnalysis {
+            lazy_lcp_candidate: true,
+            has_viewport_meta: false,
+            has_charset_meta: false,
+            img_missing_dimensions: 2,
+            has_speculation_prerender: true,
+            picture_missing_modern_source: 1,
+            preload_font_no_crossorigin: 3,
+            ..Default::default()
+        };
+        let vios = theater_violations(&analysis);
+        assert_eq!(vios.len(), 7, "all seven theater checks must fire");
+        let metrics: Vec<&str> = vios.iter().map(|v| v.metric).collect();
+        assert!(metrics.contains(&"lazy_lcp"));
+        assert!(metrics.contains(&"viewport_meta"));
+        assert!(metrics.contains(&"charset_meta"));
+        assert!(metrics.contains(&"img_dimensions"));
+        assert!(metrics.contains(&"speculation_prerender"));
+        assert!(metrics.contains(&"picture_no_modern_source"));
+        assert!(metrics.contains(&"preload_font_no_crossorigin"));
     }
 
     // ---- count_legacy_images ----
