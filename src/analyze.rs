@@ -32,7 +32,8 @@ pub struct ResourceRef {
     pub url: String,
     /// Whether the element is in <head> without async/defer — i.e. render-blocking.
     pub render_blocking: bool,
-    /// Only set for <img> and <link rel=preload as=image>.
+    /// True when the author declared LCP priority: fetchpriority="high" on an <img>,
+    /// or any <link rel=preload as=image> (preloaded images are presumed LCP-critical).
     pub is_lcp_candidate: bool,
     /// Only set for <img loading="lazy">.
     pub is_lazy: bool,
@@ -422,6 +423,33 @@ mod tests {
         </body></html>"#;
         let a = analyze(html);
         assert!(a.lazy_lcp_candidate, "fetchpriority=high + lazy on any img must set lazy_lcp_candidate");
+    }
+
+    #[test]
+    fn lazy_lcp_candidate_case_insensitive() {
+        // Attribute values in HTML are case-insensitive. FETCHPRIORITY="HIGH" and
+        // LOADING="LAZY" must fire the same as their lowercase equivalents.
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg" FETCHPRIORITY="HIGH" LOADING="LAZY" width="800" height="400">
+        </body></html>"#;
+        let a = analyze(html);
+        assert!(a.lazy_lcp_candidate, "FETCHPRIORITY=HIGH + LOADING=LAZY (uppercase) must set lazy_lcp_candidate");
+    }
+
+    #[test]
+    fn is_lcp_candidate_set_on_fetchpriority_high_img() {
+        // is_lcp_candidate on image_urls reflects fetchpriority="high", not DOM position.
+        // This field appears in --format json output; its semantics changed in cycle 13.
+        let html = r#"<!doctype html><html><body>
+            <img src="/icon.png" loading="lazy" width="60" height="60">
+            <img src="/hero.jpg" fetchpriority="high" width="800" height="400">
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.image_urls.len(), 2);
+        let icon = a.image_urls.iter().find(|r| r.url.contains("icon.png")).unwrap();
+        let hero = a.image_urls.iter().find(|r| r.url.contains("hero.jpg")).unwrap();
+        assert!(!icon.is_lcp_candidate, "icon without fetchpriority=high must have is_lcp_candidate=false");
+        assert!(hero.is_lcp_candidate, "hero with fetchpriority=high must have is_lcp_candidate=true");
     }
 
     // ── render_blocking_in_head ───────────────────────────────────────────────
