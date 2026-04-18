@@ -1,71 +1,65 @@
-# Goal — Cycle 15
+# Goal — Cycle 16
 
 ## What
 
-Create `CONTRIBUTING.md` at the repo root. It must contain four sections:
+When `!analysis.has_charset_meta`, fire a theater violation in `theater_violations`. Add the branch immediately after the `img_missing_dimensions` check:
 
-**1. Dev commands (quick reference)**
-
-Three commands:
-```sh
-cargo build                    # verify it builds
-cargo test                     # run all tests
-cargo clippy -- -D warnings    # must pass before PR
+```rust
+if !analysis.has_charset_meta {
+    vios.push(Violation {
+        kind: ViolationKind::Theater,
+        metric: "charset_meta",
+        budget: 0,
+        actual: 1,
+        detail: "missing <meta charset> or http-equiv Content-Type — forces encoding sniff".into(),
+    });
+}
 ```
 
-**2. Architecture map: where each check type lives**
+Add two tests following the `theater_violations_*` pattern in `src/audit.rs`:
 
-Three check categories, each with a one-line description and the file+function where it lives:
+1. `theater_violations_missing_charset_fires` — `HtmlAnalysis { has_charset_meta: false, has_viewport_meta: true, ..Default::default() }` → one Theater/charset_meta violation, metric `"charset_meta"`, detail contains `"encoding sniff"`.
+2. `theater_violations_charset_meta_present_no_violation` — `HtmlAnalysis { has_charset_meta: true, has_viewport_meta: true, ..Default::default() }` → no charset_meta violation in the result.
 
-- **Theater checks** — `theater_violations` in `src/audit.rs`. HTML patterns that pass Lighthouse but signal false-performance: lazy LCP, missing viewport, missing image dimensions. Each check is one `if` branch in `theater_violations`, driven by a boolean or count field on `HtmlAnalysis`.
-- **Forbidden list** — `FORBIDDEN` in `src/forbidden.rs`. Domains and script patterns unconditionally disallowed. Each entry is a `(&str, &str)` tuple: pattern and reason. Substring match, case-insensitive.
-- **Detection fields** — `HtmlAnalysis` in `src/analyze.rs` and `analyze_html`. Everything the HTML parser produces: counts, booleans, URL lists. Fields that have no violation branch are intentional holding places — they appear in JSON output for tooling consumers and are candidates for future theater checks.
+Also update `CONTRIBUTING.md`'s "Good first issues" section. `has_charset_meta` is no longer a gap once this lands — either document the next identified gap or remove the section. Do not leave it pointing at a violation that already exists.
 
-**3. Three contribution paths, each with the test pattern to copy**
-
-- **New theater check**: Add a field to `HtmlAnalysis` → detect it in `analyze_html` → add a test in `analyze.rs` (copy `img_missing_both_dimensions_is_counted`) → add a branch to `theater_violations` in `audit.rs` → add a test in `audit.rs` (copy `theater_violations_img_missing_dimensions_fires`).
-- **New forbidden entry**: Add a tuple to the `FORBIDDEN` array in `forbidden.rs` → add a test (copy `known_forbidden_url_matches`). The pattern appears anywhere in the URL, case-insensitive.
-- **New detection field (no violation)**: Add a field to `HtmlAnalysis` → detect it in `analyze_html` → add a test in `analyze.rs`. No other wiring needed. The field appears in JSON output automatically.
-
-**4. Good first issues**
-
-Name the specific gap a contributor can close without any design discussion:
-
-- **`has_charset_meta` theater violation**: This field is detected in `analyze_html` (lines 234–248), tested (`charset_meta_via_charset_attr_is_detected`, `charset_meta_via_http_equiv_is_detected`), and serialized to JSON — but has no branch in `theater_violations`. PLAN.md §7.1 explicitly lists "missing charset in first 1024 bytes" as an anti-theater rule. The contribution: add a branch to `theater_violations` when `!analysis.has_charset_meta`, add two tests. Detail string: `"missing <meta charset> or http-equiv Content-Type — forces encoding sniff"`.
-
-No code-of-conduct boilerplate. No tutorial on how to open a GitHub PR. Under 80 lines total.
+No new types. No schema changes. `has_charset_meta` is already a field on `HtmlAnalysis`, already populated by `analyze_html`, already tested in `analyze.rs` (`charset_meta_via_charset_attr_is_detected`, `charset_meta_via_http_equiv_is_detected`), already serialized to JSON. The only changes are the branch in `theater_violations`, two tests, and the CONTRIBUTING.md update.
 
 ## Which Stakeholder
 
-**The contributor** (stakeholder 4). Last served cycle 11 — four cycles ago, the longest wait in the current rotation.
+**The web performance engineer** (stakeholder 1). Last served cycle 12 — four cycles ago, the longest wait in the current rotation.
 
-Step 8 of their journey: "Look for a CONTRIBUTING.md — doesn't exist." That step has been a dead end for four cycles. Every other friction point for the contributor has been closed in the interim: clippy clean (cycle 1), 109 real tests (cycles 2–14), `theater_violations` extracted with a testable seam (cycle 11), `forbidden.rs` tested (cycle 7). The foundation is now complete. CONTRIBUTING.md is the membrane that makes it accessible to someone who hasn't read every commit.
+Step 5 of their journey: "Try JSON output for further processing." The engineer pipes `gnomon audit --format json` to their dashboard tooling. They read `html_analysis` and find `has_charset_meta: false`. They check the violations array. Nothing. Gnomon detected a render-critical issue — encoding sniffing delays HTML parsing — and said nothing.
 
 ## Why Now
 
-The timing is structural, not just rotational.
+Four cycles since the web performance engineer was served.
 
-Before cycle 11, there was no testable seam for theater checks — a CONTRIBUTING.md pointing to `theater_violations` would have been a lie. Before cycle 7, there were no `forbidden.rs` tests — the "here's how to test a new forbidden entry" section would have had no example to copy. After cycles 1–14, every path the file describes is real, tested, and backed by a named example.
+The specific moment: `gnomon audit https://example.com --format json`. `html_analysis.has_charset_meta: false`. Violations: empty. Example.com has no charset meta declaration. Gnomon knows. Gnomon says nothing.
 
-The specific moment that failed: I found `has_charset_meta` in `HtmlAnalysis` at line 20 — tracked, detected, tested, serialized. No violation branch in `theater_violations`. PLAN.md §7.1 explicitly lists it. Twenty minutes of code archaeology to identify what should be a 30-second answer from CONTRIBUTING.md. Without it, I can't tell if this is a known gap or an intentional informational field. The ambiguity blocks the contribution.
+This is the same class as cycle 12 (`img_missing_dimensions`): detected, tested, serialized to JSON, never fires a violation. The gap is worse now because CONTRIBUTING.md (cycle 15) documents it as a "known gap" — a web performance engineer reading the JSON can find the field, consult CONTRIBUTING.md, and see that gnomon explicitly knows this is a gap it hasn't closed yet. The violations array cannot be trusted as the complete picture of what gnomon knows.
 
-The structural fix: CONTRIBUTING.md names this gap explicitly. The contributor sees it in "good first issues," follows the three-step path, makes the PR. No archaeology.
+**Off-brand.** PLAN.md §7.1 lists "missing charset in first 1024 bytes" as an anti-theater rule. The detection runs. The field is in the JSON. The violation is silent. Gnomon tracks it. Gnomon says nothing. That silence is off-brand for a tool that bills itself as "precision, certainty, and no apology."
+
+The `theater_violations` seam extracted in cycle 11 was built for exactly this. One branch, two tests.
 
 ## Lived-Experience Note
 
-*I became the contributor. Cloned. `cargo build` — clean. `cargo clippy -- -D warnings` — clean. `cargo test` — 109 passing. High confidence.*
+*I became the web performance engineer. Build clean. Clippy clean. 109 tests passing. High confidence.*
 
-*I opened `analyze.rs`. 37 tests, all named, all clear. Understood the detection pattern in 5 minutes: add a field, add detection, add a test. Easy.*
+*I ran `gnomon audit https://example.com --format json`. PASS — no violations. I scanned the JSON looking for what gnomon knows about the page. Under `html_analysis`:*
 
-*I opened `audit.rs`. Found `theater_violations` at line 489 with the comment "New theater checks belong here: add a branch, add a test, done." Signpost. I looked at `img_missing_dimensions` as the example: one branch, three tests. I can follow that.*
+```json
+"has_charset_meta": false
+```
 
-*I wanted to find the next thing to add. I looked for CONTRIBUTING.md. Nothing. Root directory: Cargo.toml, PLAN.md, README.md, src/. No CONTRIBUTING.md.*
+*I know what this means. No `<meta charset="UTF-8">`, no `http-equiv Content-Type`. The browser cannot know the document encoding before it parses content — it has to sniff. That is a render-critical delay. The browser cannot begin tokenizing HTML until encoding is resolved.*
 
-*I went back to the code. Found `has_charset_meta` in `HtmlAnalysis`. Detected. Tested. No violation. Read PLAN.md §7.1: "missing charset in first 1024 bytes" is on the list. So it's planned. But is it a known gap, or has someone decided it's informational only? I can't tell. The commit history doesn't say.*
+*I looked at the violations array. Empty. I looked at the human output. Nothing about charset.*
 
-*The worst moment: realizing I'd done 20 minutes of archaeology to identify a potential first contribution, and I still don't know if my PR would be welcomed or closed as "we intentionally deferred this."*
+*Gnomon saw it. The field is in the JSON. PLAN.md §7.1 lists it. CONTRIBUTING.md says it's a known gap. The gap is documented. The gap still exists.*
 
-*The clarity signal — "I know exactly where this goes and how to test it" — holds for theater checks now. But the invitation is missing. Without CONTRIBUTING.md, the project signals "personal project with good tests" rather than "this project wants your theater check."*
+*The worst moment: realizing the violations array and the `html_analysis` object are telling different stories. The JSON says gnomon knows about `has_charset_meta: false`. The violations say gnomon has nothing to report. For a web performance engineer piping output to a dashboard, that's a trust failure: I cannot build a monitor on violations if violations don't reflect everything gnomon knows.*
 
 ---
 
