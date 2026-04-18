@@ -60,7 +60,7 @@ Sites prerender their own homepage so Lighthouse measures a warm cache instead o
 - Field name: `has_speculation_prerender: bool`
 - Detection: in `analyze_html`, find `<script type="speculationrules">` elements, parse the text content, check for `"prerender"`.
 - Violation detail: `"<script type=\"speculationrules\"> with prerender — games cold-cache LCP measurement"`
-- Test template: copy `theater_violations_img_missing_dimensions_fires`.
+- Test template: copy `theater_violations_lazy_lcp_fires` (bool that fires when `true` — same structure as `lazy_lcp_candidate`).
 
 **2. `<picture>` element with no modern-format `<source>`**
 
