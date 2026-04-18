@@ -431,6 +431,25 @@ mod tests {
         assert_eq!(budget.preset.name, "mcmaster");
     }
 
+    #[test]
+    fn resolve_budget_auto_discovery_fails_closed_on_malformed_toml() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let original = std::env::current_dir().unwrap();
+
+        let tmp = std::env::temp_dir().join("gnomon_test_malformed");
+        std::fs::create_dir_all(&tmp).unwrap();
+        // Write a gnomon.toml that is not valid TOML — should error, not fall through to preset.
+        std::fs::write(tmp.join("gnomon.toml"), b"this is not valid toml ][[[").unwrap();
+
+        std::env::set_current_dir(&tmp).unwrap();
+        let result = resolve_budget(PresetName::Insley, None);
+        std::env::set_current_dir(&original).unwrap();
+
+        assert!(result.is_err(), "malformed gnomon.toml must error, not silently fall through");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("parse"), "error message should mention 'parse': {msg}");
+    }
+
     // ── round-trip: generated TOML parses back ───────────────────────────────
 
     #[test]
