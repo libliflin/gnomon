@@ -993,7 +993,11 @@ mod tests {
             expires: "2099-01-01".to_string(),
         }];
         let err = super::apply_allowlist(&mut budget, &entries).unwrap_err();
-        assert!(err.to_string().contains("placeholder justification"));
+        assert_eq!(
+            err.to_string(),
+            "gnomon: allowlist entry for \"third_party_domains\" has a placeholder justification \
+             \"wip\" — describe the reason and link a ticket"
+        );
     }
 
     #[test]
