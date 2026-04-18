@@ -35,6 +35,10 @@ futures = "0.3"
 humansize = "2"
 aho-corasick = "1"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
+bin-dir = "{ name }{ binary-ext }"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
