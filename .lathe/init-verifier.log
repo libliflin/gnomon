@@ -1,12 +1,10 @@
-`.lathe/verifier.md` is written.
+Done. `.lathe/agents/verifier.md` is written.
 
-**Shape detected: CLI + library crate** (published to crates.io, `[[bin]]` + `[lib]` in Cargo.toml, no server/deploy config anywhere).
+**Shape detected: Service / CLI + Library.** gnomon is a Rust binary distributed via crates.io (release workflow builds cross-platform tarballs, `binstall` metadata, no UI). The canonical witness is `cargo build` → `./target/debug/gnomon audit --url ... --format ...`.
 
-Key decisions encoded in the playbook:
+**What the verifier.md encodes:**
 
-- **Standard witness sequence** every round: `cargo build` → `cargo test` → `cargo clippy -- -D warnings`. All three must pass before calling work done.
-- **CLI smoke test** for changes touching `main.rs`, `cli.rs`, `audit.rs`, or `report.rs`: build release binary, audit `https://example.com` with mcmaster, confirm exit code, confirm JSON parses, confirm help text reflects new flags.
-- **Specialized paths** for new violation kinds (confirm both human + JSON output) and `budget-init` changes (round-trip a preset file).
-- **Fallback** when network is unavailable: unit tests only, note the skip explicitly.
-
-**Verification themes** are tuned to gnomon's actual failure modes: boundary conditions on `actual > budget` comparisons (exactly-at vs. one-over), `classify()` edge cases (query strings, missing content-type, charset suffixes), HTML parsing edge cases (`data:` URIs, duplicate URLs, inline + external aggregation), exit code correctness, and JSON/human output parity for new violation kinds.
+- **Comparative scrutiny posture** — reads goal and diff side by side, asks what the gap is
+- **Verification Themes** tailored to gnomon's failure modes: off-by-one on byte budgets, zero-budget presets (insley's `js=0`), detail string exactness (what the frontend dev reads in CI), SARIF validity, inline vs. external attribution, the two intentionally-informational fields (`preload_hint_count`, `preconnect_targets`) that must never get a violation branch, exit code contract
+- **Verification Playbook** with concrete commands: `cargo test && cargo clippy`, `cargo build`, `gnomon audit` against `example.com`, all three `--format` flags, `python3 -m json.tool` to validate JSON/SARIF, exit code check
+- **Testing bar** matched to the project's existing patterns: inline `#[cfg(test)]`, named templates from builder.md, exact-match assertions over `contains` for detail strings

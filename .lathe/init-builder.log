@@ -1,12 +1,10 @@
-Written to `.lathe/builder.md`.
+Written to `.lathe/agents/builder.md`. Here's what the file encodes:
 
-The file encodes the durable conventions the builder needs across 50 cycles:
-
-- **Identity and posture** — creative synthesis, structural solutions, fewest moving parts
-- **The dialog model** — round 1 always contributes, round 2+ is judgment-driven, convergence ends the cycle naturally
-- **Module map** — where each `src/*.rs` file lives in the conceptual model, the standard path for adding a violation type or CLI subcommand
-- **Testing conventions** — co-located unit tests, synthetic inputs (no live URLs), the unhappy-path bar for new checks
-- **Brand signals** — em-dash as separator, `PASS`/`FAIL` in caps, categorical negation in refusals — all grounded in the actual source code
-- **Changelog format** — matches the goal-setter's stakeholder framing (Who This Helps mirrors how the goal-setter thinks)
-
-Current-state observations (thin test surface, no CI config) are intentionally left out — those belong in the snapshot, not here.
+- **Identity and posture** framed to complement the champion's empathy-first worldview — the champion names what and why, the builder brings it into being well.
+- **The dialog model** — round 1 always contributes, subsequent rounds read the verifier's additions and respond from a creative lens, convergence ends the cycle.
+- **Module map** — the nine source files with their responsibilities, so the builder knows where to look without spelunking each round.
+- **Three contribution paths** — the exact test templates to copy for anti-theater rules, forbidden domains, and count violations, matching what CONTRIBUTING.md tells human contributors.
+- **The two intentionally-informational fields** (`preload_hint_count`, `preconnect_targets`) called out explicitly so the builder never wires a violation for them.
+- **Build validation gate** — `cargo test && cargo clippy -- -D warnings` before every push, matching the CI jobs.
+- **Commit message convention** — derived from the recent git log, conventional commits with lowercase imperative style.
+- **Brand guidance** scoped to gnomon's tone-sensitive surfaces — especially `Violation.detail`, which is what the frontend developer reads when CI fails on their PR.

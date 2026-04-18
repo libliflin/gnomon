@@ -1,8 +1,8 @@
-Clean output, ~1,400 characters — well within the 6K cap. Here's what `.lathe/snapshot.sh` does:
+Script runs cleanly. Output is 1,574 chars on the happy path — well inside the 6K cap with plenty of headroom for failure details if needed.
 
-- **Build**: `cargo build`, one-liner on success, errors on failure
-- **Tests**: `cargo test`, sums pass/fail/ignored across all suites (unit + doc + integration) — correctly shows **Pass: 1**
-- **Clippy**: `cargo clippy --all-targets`, reports warning count on success, errors on failure
-- **Git status/log**: standard summaries
-- **CI**: checks `.github/workflows/`, notes absence
-- **macOS-safe**: `gtimeout`/`timeout` fallback, `-E` regex instead of `-P`, `awk` for summing
+`.lathe/snapshot.sh` covers:
+- **Git status + recent commits** — change signals each cycle
+- **Build** (`cargo build`) — one line OK, expands on failure
+- **Tests** (`cargo test`) — Pass/Fail/Ignored counts; failure details expand
+- **Clippy** (`cargo clippy -D warnings`) — mirrors what CI enforces
+- **CI config** — lists workflow files

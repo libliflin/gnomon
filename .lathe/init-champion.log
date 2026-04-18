@@ -1,0 +1,17 @@
+Everything is in place. Here's what was written and why:
+
+---
+
+**`.lathe/agents/champion.md`** — The runtime playbook. Five stakeholders grounded in what the code actually reveals: the CI integrator who copies the Actions snippet, the frontend developer who hits a CI failure they didn't cause, the evaluator deciding whether gnomon is serious, the contributor adding a theater rule, and the maintainer keeping the codebase coherent. Each has a first-encounter journey, a trust/walk-away signal, and a specific emotional signal derived from who they are — not from taste. The ranking section uses the two-source model (floor, then lived experience) with explicit language calling out the layer-ladder temptation. The journey output template is verbatim, with the playbook/report distinction named clearly.
+
+**`.lathe/skills/testing.md`** — How gnomon tests: all unit tests in `#[cfg(test)]` modules, key patterns (boundary tests, top-2 contributors, inline synthetic entries, CWD serialization), and what's not yet tested (integration against live URLs, benchmarks).
+
+**`.lathe/skills/build.md`** — The three commands, the binary structure, the release profile, distribution targets, and the declared performance budget for gnomon itself.
+
+**`.lathe/skills/architecture.md`** — Module map with I/O column, the six load-bearing decisions (brotli recompression, Aho-Corasick, inline attribution, theater as pure function, DOM-based scraper, naive eTLD+1), violation assembly order, and a gap table of what PLAN.md describes vs. what exists in v0.0.2.
+
+**`.lathe/skills/journeys.md`** — Concrete, step-by-step journeys for all five stakeholders, with the specific moments where friction or delight would show up — written to be walkable, not just describable.
+
+**`.lathe/skills/domains.md`** — Seven domain boundaries: HTTP/content negotiation, HTML parsing, performance budgets, anti-theater rules, forbidden list, SARIF, and Rust/crate ecosystem. Each names what the domain covers, what's authoritative, and where the boundary creates confusion.
+
+**`.lathe/alignment-summary.md`** — For you: the stakeholder map, emotional signals, tensions, and four things that could be wrong — including the staging-URL blocker for the CI integrator, the PLAN.md expectation gap for the evaluator, and the security note on branch protection.

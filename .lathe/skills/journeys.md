@@ -1,112 +1,149 @@
-# Stakeholder Journeys — Gnomon
+# Stakeholder Journeys
 
-These are the concrete first-encounter journeys the champion walks each cycle. Each one ends with an emotional signal — the single feeling that tells you whether the moment was good, bad, or hollow.
-
----
-
-## Stakeholder 1: The web performance engineer
-
-**Who.** A developer who has been burned by Lighthouse scores that don't stop regressions. They care deeply about page weight. They've seen a 90/100 Lighthouse score on a 2MB page. They are evaluating gnomon as a replacement for Lighthouse in their CI.
-
-**Emotional signal: momentum.** The moment after the first run, they should feel the urge to tell someone — "I found a tool that actually does what I want." Hollow is: a wall of output with no clear next action. Bad is: an error that tells them nothing.
-
-**First 10 minutes:**
-1. Find gnomon — probably via the README or the insley-web project.
-2. Install: `cargo install gnomon` or download a precompiled binary.
-   - *Watch for: install time, whether cargo is even installed, binary size.*
-3. Run against a real URL: `gnomon audit https://their-site.com`
-   - *Watch for: does it start quickly? Is there any progress indicator during the fetch?*
-4. Read the output: bytes table, counts table, violations list.
-   - *Watch for: are violations specific enough to act on? Do they explain why, or just that?*
-5. Try to understand a violation: "CSS 47 KiB / 14 KiB (zero budget) — 33 KiB over"
-   - *Watch for: which files contributed? Can they find the source of the bloat?*
-6. Run with JSON output: `gnomon audit https://their-site.com --format json`
-   - *Watch for: is the schema self-explanatory? Does it have what they'd need to build a dashboard?*
-7. Try `gnomon presets` to understand the two presets.
-   - *Watch for: are the presets legible? Do the budget numbers make sense?*
-8. Look for a way to add it to CI.
-   - *Watch for: `gnomon ci` command doesn't exist yet. No GitHub Action. They're on their own.*
-
-**What to try:**
-- Pick a real URL (or use example.com) and run `gnomon audit`.
-- Look at the violation output as if you'd never seen the PLAN.md. Is it obvious what to fix?
-- Look at the "contributor hints" in byte violations (top 2 files). Are they useful?
-- Try `gnomon audit https://example.com --format json | head -40`. Is the JSON navigable?
+Concrete journeys the champion walks each cycle, one per stakeholder. These are the steps, the emotional signal, and the moments where friction or delight would show up. Current-state observations belong in the snapshot — this file covers durable journey structure.
 
 ---
 
-## Stakeholder 2: The CI integrator
+## 1. CI Integrator
 
-**Who.** An engineer responsible for adding gnomon to their team's pipeline. They've been asked to enforce performance budgets in CI. They are not necessarily the person who chose gnomon — they may have been handed it. They care about: exit codes that mean something, zero false positives, a fast run time, and a way to get the output into their existing tooling (GitHub Annotations, Slack notifications, etc.).
+**Who:** DevOps engineer or senior developer adding gnomon to a GitHub Actions pipeline for a static site.
 
-**Emotional signal: confidence.** After wiring gnomon in, they should feel "this gate is real — when it fails, it means something, and when it passes, I trust it." Hollow is: a gate that passes everything. Bad is: a gate that flakes or fails for reasons unrelated to the site's performance.
+**Emotional signal:** Trust + speed. "This ran in under 1 second, told me exactly what was wrong, and I know the gate will hold."
 
-**First 10 minutes:**
-1. Look for the CI integration docs.
-   - *Watch for: the README mentions `gnomon ci` and a GitHub Action (`libliflin/gnomon-action@v1`), but neither exists yet. The discrepancy between the README's promises and v0.0.2's reality is the most critical gap here.*
-2. Try `gnomon ci` — **this command doesn't exist.** The CLI has `audit`, `budget-init`, `presets`. No `ci` subcommand.
-   - *Watch for: the error message when an unknown subcommand is used.*
-3. Improvise: `gnomon audit https://their-site.com --format json; echo $?`
-   - *Watch for: does exit code 1 on failure work correctly? Exit code 2 for config errors?*
-4. Look for a Docker image or precompiled binary for their CI runner OS.
-   - *Watch for: `cargo install gnomon` in CI is 3-5 minutes. Is there a faster path?*
-5. Try to understand SARIF output (for GitHub code scanning) — **doesn't exist yet.**
-6. Try `gnomon audit --help` to see all available flags.
-   - *Watch for: `--format json` is there. `--sarif` is not. `--fail-on=new` is not.*
+**Journey steps:**
 
-**What to try:**
-- Run `gnomon audit https://example.com` and check `echo $?` for exit code.
-- Verify exit code 1 on a URL that will fail (try a bloated real-world site).
-- Run `gnomon audit --help` and read every flag as if you were looking for what you need.
-- Note every moment where the README describes a feature that doesn't exist in the binary.
+1. Find the repo (linked from insley-web, blog post, GitHub search).
+2. Read the README — looking for: pre-built binary? Actions snippet? What does the exit code mean?
+3. Copy the Actions snippet. Replace `https://staging.your-site.com` with their actual staging URL.
+4. Push a branch. Wait for CI to run the new step.
+5. Read the job output: violations or a clean pass?
+6. If violations: understand which metric, what the budget is, what the actual is, which resource is responsible.
+7. Consider SARIF mode: add the `--format sarif` step and `upload-sarif` action. Check if annotations appear in the PR.
+8. Decide: ship this integration, tune the config first, or evaluate further.
 
----
+**Where friction shows up:**
+- Step 2: is the Linux x86_64 musl install command in the README correct and copy-pasteable? (This is the runner platform.)
+- Step 3: is the URL they're pointing at accessible from a GitHub Actions runner? (Staging URLs behind a VPN are not. `--dir` mode would unblock this, but it doesn't exist yet.)
+- Step 5: does it complete in under 10 seconds total?
+- Step 6: does the violation detail name the specific file that's over budget, not just the category?
+- Step 7: do SARIF violations show up as annotations in the GitHub PR? (They show as workflow-run annotations, not inline diff comments — this is correct behavior per PLAN.md §12.2, but a first-time user may expect inline comments.)
 
-## Stakeholder 3: The team technical lead / budget owner
-
-**Who.** The engineer who owns the `gnomon.toml` and is accountable for the performance standard. They explain violations to teammates. They decide when to loosen a budget and write the justification. They want to trust the tool completely — when gnomon says fail, they need to be able to defend it.
-
-**Emotional signal: authority.** When gnomon fails a build, they should be able to say "here's why, here's the rule, here's the path to fix it" without having to read PLAN.md to their team. The violation message should carry enough weight on its own. Hollow is: a violation that says "over budget" without telling the team what pushed it over.
-
-**First 10 minutes:**
-1. Look at `gnomon presets` output to understand the numbers.
-2. Run `gnomon budget-init --preset mcmaster` to generate a starter config.
-   - *Watch for: does the generated file include comments explaining each budget? Does it teach or just configure?*
-3. Read the generated `gnomon.toml`. Try to explain it to a hypothetical teammate.
-4. Run `gnomon audit` against a real URL with the config. Read a failing violation message aloud.
-   - *Watch for: does the message include enough context for a code review comment? "CSS 47 KiB over budget — main.css (38 KiB), vendor.css (9 KiB)" is good. "css: 47 KiB / 14 KiB" is not enough.*
-5. Look for `gnomon budget explain <violation-id>` — **doesn't exist yet.**
-6. Try to understand the justification system from `gnomon.toml` comments.
-   - *Watch for: is the justification format documented in the generated file?*
-
-**What to try:**
-- Run `gnomon budget-init` and read the output file carefully.
-- Run `gnomon presets` and check if the numbers are self-explanatory.
-- Construct a violation message as a teammate would read it. Is it actionable?
+**Where delight shows up:**
+- A clean, fast run on a well-optimized site.
+- Violation output that reads: "css: 6 KiB over 14 KiB budget — vendor.css (20 KiB)" — specific enough to act on immediately.
 
 ---
 
-## Stakeholder 4: The contributor
+## 2. Frontend Developer on a Gated Project
 
-**Who.** A Rust developer who wants to add a check to gnomon — maybe a new anti-theater rule, a new forbidden domain, or a new violation type. They evaluate the project in the first 10 minutes and decide whether it's worth their time.
+**Who:** Mid-level frontend developer whose team already uses gnomon. CI failed on their PR. They need to understand the violation and resolve it.
 
-**Emotional signal: clarity.** After reading the code, they should know exactly where to put their new rule and how to test it. Hollow is: understanding the structure but having no tests to validate their change. Bad is: a codebase that fails its own quality gates (clippy errors, broken build).
+**Emotional signal:** Clarity + agency. "I know exactly what to fix and how."
 
-**First 10 minutes:**
-1. Clone the repo.
-2. `cargo build` — does it build clean?
-3. `cargo clippy -- -D warnings` — does it pass clean? (It does as of cycle 1 fix.)
-4. `cargo test` — does it pass? (Technically yes, but there's only a sanity stub.)
-5. Read `src/analyze.rs` to understand where a new HTML check would go.
-   - *Watch for: is it clear how to add a new `HtmlAnalysis` field? Is the `analyze_html` function navigable?*
-6. Read `src/audit.rs` to see where violations are assembled.
-   - *Watch for: the violation assembly is at the bottom of `audit_url`. Is it clear how to add a new violation check?*
-7. Look for a test to copy as a starting point for their new check — **none exist.**
-8. Look for a `CONTRIBUTING.md` — **doesn't exist.**
-9. Try to add a trivial new forbidden domain and verify it fires.
+**Journey steps:**
 
-**What to try:**
-- Open `src/analyze.rs` and trace through what happens to a `<script loading="lazy">` tag.
-- Open `src/forbidden.rs` and try to understand how to add a new entry.
-- Run `cargo test` and note the hollow green result.
-- Imagine adding a new check: where would you put it? How would you test it?
+1. See CI failure on their PR. Open the Actions log or GitHub code scanning annotations.
+2. Find the violation in the output: metric, actual value, budget, and (hopefully) contributing resource.
+3. Run `gnomon audit <staging-url>` locally to reproduce the failure.
+4. Read the violation detail in human output: e.g., "fonts: 1 over budget of 0 — serif-regular.woff2 (45 KiB)".
+5. Decide: remove the font (fix the root cause) or write a justified exception in `gnomon.toml`.
+6. If exception: look up `gnomon.toml` justification syntax — in README? in PLAN.md? in the generated file?
+7. Edit `gnomon.toml`, re-run audit locally to confirm the violation is resolved.
+8. Push and wait for CI to confirm.
+
+**Where friction shows up:**
+- Step 2: is the CI annotation actionable, or just a metric name?
+- Step 3: can they reproduce locally? (Requires a staging URL they can hit from their laptop.)
+- Step 4: does the violation detail name the specific file and its size?
+- Step 6: justification syntax (`justification` + `justification_expires`) is in PLAN.md §8 and §10 — not in the README. A developer who looks in the README first won't find it.
+- Step 7: in v0.0.2, per-route overrides and justification expiry enforcement are not implemented. The gnomon.toml `[bytes]`/`[count]` sections work, but the allowlist justification entries in PLAN.md §8 don't. This is an invisible gap — the `ConfigFile` uses `deny_unknown_fields`, so unknown keys fail. The developer may not be able to write a justification at all.
+
+**Where delight shows up:**
+- Violation detail that names the exact resource: immediate clarity about what to fix.
+- Re-running locally and seeing PASS: confirmation before pushing.
+
+---
+
+## 3. Evaluator
+
+**Who:** Tech lead or staff engineer deciding whether to adopt gnomon for their team. Technically sophisticated. Believes performance matters.
+
+**Emotional signal:** Conviction + alignment. The moment of recognition: "this is as uncompromising as I am."
+
+**Journey steps:**
+
+1. Land on the GitHub repo.
+2. Read the README opening: does the framing land? "A CI gate, not a dashboard. It does not produce a score out of 100. It produces pass or fail." — yes or no.
+3. Read PLAN.md thesis (§1) and fail-closed disposition (§6): is the philosophy coherent?
+4. Run `gnomon audit https://a-known-fast-site.com` — expect a pass or near-pass.
+5. Run `gnomon audit https://a-known-bloated-site.com` — expect specific, real violations.
+6. Run `gnomon presets` — read the insley and mcmaster preset values.
+7. Check the git log and recent activity — maintained?
+8. Decision: adopt, evaluate further, or reject.
+
+**Where friction shows up:**
+- Step 4-5: any site that gnomon can't reach (502, auth-required, redirect loops) is a friction point. The evaluator will attribute fetch errors to gnomon being brittle, not to the site.
+- Step 4: if a well-known fast site (e.g., gov.uk) fails on something that feels wrong, the evaluator loses confidence.
+- Step 6: are the insley preset values defensible on inspection? 0 JS is extreme — the evaluator needs to see it as principled, not arbitrary. PLAN.md §1 defends it; the evaluator must find that text.
+- Step 7: v0.0.2 is sparse. A reader of PLAN.md who sees that `--dir`, `--measure`, `gnomon budget tighten`, etc. don't exist yet may judge the tool as vaporware.
+
+**Where delight shows up:**
+- Reading PLAN.md §6 (fail-closed disposition) and recognizing it as principled, not rude.
+- Running it on a bloated site and seeing a clear list of exactly what's wrong.
+- The "you cannot quietly become McKinsey's website" line.
+
+---
+
+## 4. Contributor
+
+**Who:** A developer adding a new anti-theater rule or forbidden domain. Has Rust experience. Has cloned the repo.
+
+**Emotional signal:** Momentum + confidence. "I added a rule in 30 minutes and it felt right."
+
+**Journey steps:**
+
+1. Read `CONTRIBUTING.md` — which file? which test template?
+2. Identify the right contribution path: anti-theater rule (3-file change: `analyze.rs` + `audit.rs` + tests in both), forbidden domain (1-file change: `forbidden.rs` + test).
+3. Copy the named test template exactly.
+4. For anti-theater: add field to `HtmlAnalysis`, detect in `analyze_html`, branch in `theater_violations`.
+5. For forbidden: add tuple to `FORBIDDEN`, write `ForbiddenMatcher::new().find(...)` test.
+6. Run `cargo test` — all tests pass?
+7. Run `cargo clippy -- -D warnings` — clean?
+8. Open PR.
+
+**Where friction shows up:**
+- Step 1: the note about intentionally informational fields (`preload_hint_count`, `preconnect_targets`) is in `CONTRIBUTING.md` under "Good first issues" — a contributor who finds these fields via `HtmlAnalysis` may try to add violations for them before reading that note.
+- Step 3: the test template names in CONTRIBUTING.md are exact — if the test was renamed or moved, the instructions break.
+- Step 4: the 3-file pattern for anti-theater rules is clear in CONTRIBUTING.md. The order matters: add field → detect → fire violation. Getting the order wrong causes compile errors.
+- Step 6: `cargo test` is fast (all unit tests, no network). Feedback is immediate.
+
+**Where delight shows up:**
+- `cargo test` passing after adding a rule — the test suite gives immediate confirmation.
+- The code pattern being consistent enough that "where to add this" is obvious after reading one existing check.
+
+---
+
+## 5. Maintainer
+
+**Who:** The author(s) building and maintaining gnomon. Ongoing relationship with the codebase.
+
+**Emotional signal:** Coherence + progress. "The codebase is growing in the right direction."
+
+**Journey steps (typical session):**
+
+1. `git pull && cargo test` — is everything still passing?
+2. `cargo clippy -- -D warnings` — any new warnings?
+3. Read the lathe snapshot — what is the improvement loop targeting this cycle?
+4. Review the cycle's PR or decide on next work.
+5. Build, test, ship.
+
+**Where friction shows up:**
+- If lathe cycles are targeting low-value things (e.g., adding tests for already-tested edge cases, tweaking format strings when structural gaps exist).
+- If the snapshot is drowning in raw test output instead of providing a concise signal.
+- If clippy warnings accumulate and become noise.
+- If the test suite has gaps that let regressions through.
+
+**Where delight shows up:**
+- A lathe cycle that adds a rule a real user would care about.
+- A test that would have caught a recent bug.
+- A cycle that closes a documented gap (e.g., `--dir` mode, justification enforcement).

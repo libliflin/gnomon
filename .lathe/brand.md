@@ -1,49 +1,33 @@
 # Brand
 
-## Identity
-
-Precise, clinical, unapologetic. Gnomon names what it sees — "LCP gaming," "theater," "33 KiB over" — and does not soften the language to protect the reader's feelings. It earns authority by never negotiating with bad defaults, and it applies that same standard to itself (from `PLAN.md §13`: "The tool audits its own build time. That is not a joke."). The project knows exactly what it is and is not, and the boundary is stated as a fact, not a policy.
-
-Archetype: the gnomon itself. It doesn't tell you the time — it reveals it. The shadow is what was always there.
+**Identity.** Plainspoken enforcer with a craftsman's disposition. Short sentences, specific numbers, named culprits. Convictions are stated once and not apologized for — the strictness is the product, not a side effect. From `PLAN.md`: "It is unapologetically opinionated. It ships hostile defaults. It fails closed." From `cli.rs:11`: `about = "Performance budget auditor. A CI gate, not a dashboard."` From `PLAN.md §6`: "Hostile defaults are the *product*. If they feel rude, it is because they are doing their job." The voice is working-developer, not consultant.
 
 ---
 
 ## How we speak
 
-**When we say no.**
-Categorical and final, not apologetic. "There is no `--warn-only` flag. Does not exist. Will not be added. A PR proposing it will be closed." (from `PLAN.md §6`). Not "we've decided not to support this at this time." The refusal is the position; no elaboration earns a softer landing.
+**When we say no:** Flat, active, complete. No hedging, no apology, no alternative suggested — unless the alternative is "use a different tool." From `PLAN.md §11`: "Flags that do not exist and will not be added: `--warn-only`, `--skip <check>`, `--allow-regressions`, `--soft-fail`, `--bypass`, `--force`. If a user wants any of these, they are looking for a different tool." From `PLAN.md §6`: "No `--warn-only` mode. Does not exist. Will not be added. A PR proposing it will be closed." Three sentences. Done.
 
-The pattern extends to the non-goals list (`PLAN.md §16`): "Different problem, different tool." Two sentences. Done.
+**When we fail (violations):** Lead with the delta, name the culprit. From `audit.rs` violation format, pinned in test at line 1175: `"3 KiB over 100 KiB budget — images (82 KiB), css (13 KiB)"`. The pattern is always: amount over budget → em dash → the file causing it. No softening language. No "consider reducing." The violation is the instruction. On theater: call it what it is. From `audit.rs:519`: `"first <img> has loading=\"lazy\" — likely LCP gaming"`. We name the trick, not just the symptom.
 
-**When we fail.**
-One line. The number first, then what pushed it over. `"33 KiB over — main.css (28 KiB), vendor.css (5 KiB)"` (from `src/audit.rs:203–225`). Not "you may be exceeding your CSS budget." The detail is actionable by design; you can paste it into a PR comment and it stands on its own.
+**When we explain:** State the fact, then the mechanism, in one sentence. From `audit.rs:551`: `"missing <meta charset> or http-equiv Content-Type — forces encoding sniff"`. From `audit.rs:539`: `"3 <img> element(s) missing explicit width/height — layout shift (CLS)"`. The em dash separates what from why. Never longer than one sentence. Never narrative.
 
-Fetch and config errors prefix with the tool name and give the bare cause: `gnomon: {e:#}` (from `src/main.rs:24`). No apology. No suggestion to "try again later."
+**When we succeed:** Quiet. From `report.rs:80`: `println!("{}  {}", "PASS".green().bold(), "all budgets met".dimmed())`. PASS is bold and green; the explanation is dimmed. No celebration — passing is the expected state, not a surprise.
 
-**When we name a bad practice.**
-We call it what it is. The lazy-loaded LCP element violation reads: `"first <img> has loading=\"lazy\" — likely LCP gaming"` (from `src/audit.rs:301`). Not "potential anti-pattern." Not "may affect Lighthouse scores." The word is "gaming." The section in PLAN.md is titled "Anti-theater" — not "potential concerns" or "performance gotchas."
-
-**When we onboard a new user.**
-The `--help` about line: `"Performance budget auditor. A CI gate, not a dashboard."` (from `src/cli.rs:11`). One sentence. Binary distinction. Then immediately: exit codes, commands, what's working, what's coming. The README opens with the sundial metaphor and moves to `cargo install gnomon` within a page. No feature-list preamble.
-
-**When we pass.**
-`PASS  all budgets met` — green, one line, understated (from `src/report.rs:80`). The success case is quieter than the failure case. This is intentional: passing is the expected state; failure is the exception that needs attention.
-
-**When we explain an internal decision.**
-Even in source comments, the voice holds. From `src/audit.rs:369–370`: `"Naive eTLD+1 for third-party comparison. Falls short on .co.uk etc., but good enough for v0.0.2 — the error case is 'we undercount third parties on multi-suffix TLDs,' which means we're generous to the site, not harsh."` — acknowledges the flaw, names the failure mode, states which direction it errs. Transparency without hedging.
+**When we onboard a new user:** Same voice as the tool itself. From `README.md:4–8`: opens with the sundial metaphor, then immediately: "It does not produce a score out of 100. It produces pass or fail." From `PLAN.md`: "If that is not the tradeoff you want, use another tool." No welcome mat, no warmth, no feature list. The tool introduces itself by stating its position.
 
 ---
 
 ## The thing we'd never do
 
-We'd never graduate a violation into a warning. "There are violations and non-violations. There is no yellow state." (from `PLAN.md §16`). The temptation is real — a yellow state is "user-friendly." Gnomon rejects it because a gate that flickers is not a gate. Any output format, any future feature, any addition to the CLI that introduces a third verdict state is off-brand. PASS and FAIL are the whole vocabulary.
+Bury the actionable signal under prose or leave the user hunting for which file caused the violation. Every violation leads with the number and names the culprit: `"33 KiB over — main.css (28 KiB)"`, `"1 over budget of 0 — serif-regular.woff2 (45 KiB)"`. The champion cycle 18 commit message names the principle directly: "budget owner — total bytes violation names nothing, category contributors would make it pastable." Pastable is the test: a violation must be copy-pasteable into a Slack message or PR comment and stand alone without the surrounding report.
 
 ---
 
 ## Signals to preserve
 
-1. **`PASS` / `FAIL` in all-caps.** Every verdict is uppercase, final, unambiguous. Not "passed," not "success." The word is a binary state, not a description.
+- **Lowercase imperative commit messages with a type prefix.** `feat: add SARIF 2.1.0 output format`, `test: pin case-insensitive content-type matching`, `docs: correct SARIF annotation placement`. No sentence case, no trailing period, no drama.
 
-2. **The em-dash as separator in violation details.** `"33 KiB over — main.css (28 KiB), vendor.css (5 KiB)"`. The em-dash separates the verdict from the evidence. It's the breath between "what happened" and "who did it." Preserve this rhythm in any new violation type.
+- **Violations lead with the delta, then the culprit, separated by an em dash.** `"N KiB over Y KiB budget — filename (size)"`. Never reversed. The champion and builder reading this brand file should treat violations that don't follow this pattern as off-brand — the user gets the number before they have to look up the budget.
 
-3. **Categorical negation in refusals.** "Does not exist. Will not be added." Not "is not currently supported." The present tense and the future tense both close the door. When gnomon refuses something, the refusal is a design decision, not a roadmap note.
+- **Inline comments explain the adversarial case.** From `audit.rs:104–105`: `// inline styles / scripts roll into CSS/JS budgets so a site that inlines everything to "hide" bytes from external-resource checks still gets caught`. From `audit.rs:597–599`: `// the error case is "we undercount third parties on multi-suffix TLDs," which means we're generous to the site, not harsh`. Comments explain *why the rule exists and what it's catching*, not just what the code does. This extends to SARIF comments, budget file comments, and CONTRIBUTING.md.

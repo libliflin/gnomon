@@ -1,42 +1,49 @@
-# Alignment Summary — Gnomon Customer Champion
+# Alignment Summary
+
+Plain-English summary of alignment decisions for the user — not for the runtime agent.
+
+---
 
 ## Who this serves
 
-- **Web performance engineer**: installs gnomon, runs it against a URL, reads violations, decides whether to adopt it — needs momentum from the first run
-- **CI integrator**: wires gnomon into a pipeline, needs exit codes that mean something, machine-readable output, and no flake
-- **Team technical lead / budget owner**: owns gnomon.toml and explains violations to teammates, needs the output to carry its own authority
-- **Contributor**: adds rules or fixes to the codebase, needs clarity about where things go and how to test them
+- **CI integrator**: a developer or DevOps engineer adding gnomon to a GitHub Actions pipeline to gate a static site's performance. Primary goal: get it running, trust the output, know the gate will hold.
+- **Frontend developer on a gated project**: someone whose team already uses gnomon, hit a CI failure, and needs to understand the violation and resolve it (fix or justify). Primary goal: clarity on what to fix and how.
+- **Evaluator**: a tech lead or staff engineer deciding whether to adopt gnomon for their team. Primary goal: validate that gnomon is serious and philosophically aligned with their values before committing.
+- **Contributor**: a developer adding a new anti-theater rule or forbidden domain upstream. Primary goal: add a rule in under an hour with confidence.
+- **Maintainer**: the author(s) building gnomon. Primary goal: coherent code, meaningful tests, a trustworthy CI gate, and lathe making real progress.
+
+---
 
 ## Emotional signal per stakeholder
 
-- **Web performance engineer**: momentum — "I want to tell someone about this"
-- **CI integrator**: confidence — "When it fails, it means something; when it passes, I trust it"
-- **Budget owner**: authority — "When this says fail, I can defend it to my team"
-- **Contributor**: clarity — "I know exactly where this goes and how to test it"
+- **CI integrator**: trust + speed — "this ran in under 1 second, told me exactly what was wrong, and I know the gate will hold"
+- **Frontend developer**: clarity + agency — "I know exactly what to fix and how"
+- **Evaluator**: conviction + alignment — "this is as uncompromising as I am"
+- **Contributor**: momentum + confidence — "I added a rule in 30 minutes and it felt right"
+- **Maintainer**: coherence + progress — "the codebase is growing in the right direction"
+
+---
 
 ## Key tensions
 
-- **README vs. binary**: the README describes `gnomon ci`, SARIF output, and a GitHub Action — none of which exist in v0.0.2. This is the CI integrator's dead end. Resolve toward: update docs to match reality before adding features, unless an external consumer has already been burned.
-- **Hostile defaults vs. onboarding**: gnomon is intentionally unforgiving. This is not negotiable — it's the product. The fix for an overwhelming first experience is more specificity in violation messages, not softer defaults.
-- **Tests vs. velocity**: the hollow test suite is a walking contradiction for a tool that sells enforcement. This tension resolves toward tests faster than it would for most projects.
+**Hostile defaults vs. first adoption.** The insley preset (0 JS, 0 fonts, 100 KB total) is extreme by design. But if the first audit run produces 15 confusing violations on a reasonable site, the evaluator or integrator walks away before experiencing the value. Tension: enforcement authority vs. adoption friction.
 
-## Repository security (for autonomous operation)
+**URL mode vs. directory mode.** The tool requires a live URL. The canonical CI use case — audit the build artifact before deploy — needs `--dir`. Many CI environments don't expose staging URLs from PR builds. This is currently the most likely blocker for the CI integrator.
 
-The lathe agent reads CI results and PR metadata from GitHub and uses them in prompts — a prompt injection attack surface.
+**Claims vs. implementation (v0.0.2 vs. PLAN.md).** PLAN.md describes a complete system: justifications with expiries, per-route overrides, ratchet, `gnomon ci`, `gnomon watch`. None of these are implemented yet. A first-time user who reads PLAN.md expecting a complete system will hit gaps. The `ConfigFile` uses `deny_unknown_fields`, so if a user writes a justification entry as described in PLAN.md §8, it will fail at parse time with an "unknown key" error — which is confusing because the docs imply it should work.
 
-**Findings (as of init, 2026-04-17):**
-- **CI workflows**: none exist (`.github/workflows/` is absent). No `pull_request_target` or `issue_comment` triggers to worry about.
-- **Branch protection**: could not be verified automatically (gh API requires auth). **Action required**: manually verify that the `main` branch has protection rules enabled (require PR reviews, require status checks).
-- **Repo visibility**: could not be verified automatically. **Action required**: if the repo is public, be especially cautious about PR title/description injection into agent prompts, since any GitHub user could open a PR.
+**Strictness vs. contributor confidence.** The insley preset is strict enough that a new contributor adding a rule needs to understand the philosophy to know if their rule fits. Two `HtmlAnalysis` fields (`preload_hint_count`, `preconnect_targets`) are intentionally informational and must not get violation branches — CONTRIBUTING.md explains this, but a contributor who finds them by scanning `HtmlAnalysis` may try to add violations before reading that note.
+
+---
 
 ## What could be wrong
 
-- **Missing stakeholder: the end user whose device is protected.** The end user never touches gnomon, but they are the ultimate beneficiary and the ethical center of the tool's design. The champion currently has no journey for them. This was intentional — there's no way to "use the project as them" because they don't interact with gnomon. But the champion should hold this stakeholder in mind when deciding between two otherwise-equal goals: which one actually helps the person whose bandwidth gnomon is protecting?
+**Missing stakeholder?** There may be a "library consumer" stakeholder — someone importing `gnomon` as a Rust library (`use gnomon::audit_url`). `lib.rs` re-exports the public API. No documentation targets this use case and no examples exist in the repo. If library consumers show up, the playbook needs a new stakeholder entry with its own journey.
 
-- **v0.0.2 is very early.** The architecture is a single flat crate. The test suite is a stub. Several documented commands don't exist. The champion's journeys will hit walls quickly. This is appropriate — the champion should name those walls, not work around them. But the journeys in `skills/journeys.md` need to be updated as the project matures; they'll go stale by cycle 5 or 6 if the tool advances significantly.
+**Evaluator emotional signal may be off.** "Conviction + alignment" assumes the evaluator already believes in strict performance enforcement. A skeptical evaluator ("prove to me this is worth the friction") needs a different signal — closer to "evidence + fairness." If evaluators frequently evaluate and don't adopt, this assumption is worth revisiting.
 
-- **No `--dir` mode.** The README and PLAN.md describe auditing a local built directory (`gnomon audit --dir ./dist`), but the current `AuditArgs` only has a `url` field. The adopting engineer or CI integrator who wants to audit a built artifact before deploy will hit this gap. The champion should notice this during the CI integrator's journey.
+**CI integrator may not have a staging URL.** The current tool requires `gnomon audit <url>`. In many CI setups — especially for organizations that don't maintain a persistent staging environment — there is no URL to point at. The `--dir` mode is planned (PLAN.md v0.1 roadmap) but not implemented. This may be the single largest adoption blocker for the CI integrator stakeholder.
 
-- **Insley preset vs. mcmaster preset selection.** The champion should periodically ask: are we optimizing for the insley-tier engineer (hardest possible standard) or the mcmaster-tier engineer (serious but achievable)? The tool serves both, but the default (`insley`) is brutal for most real-world sites. The champion should notice if the first-run experience consistently produces 8+ violations and ask whether that serves or alienates the adopting engineer — without compromising the hostile-defaults philosophy.
+**Repository security check.** The CI workflow uses `pull_request` (not `pull_request_target`) and has no `issue_comment` triggers — not a prompt injection risk for the lathe loop. The repo is public (github.com/libliflin/gnomon). Branch protection on `main` is a GitHub setting not visible in repo files; it should be verified in GitHub repository settings. If the default branch is not protected, lathe cycles that commit directly to main could theoretically be disrupted by an external PR.
 
-- **The brand.md file is absent.** Goal.md instructs the champion to apply brand as a tint, but brand.md does not exist. The champion should fall back to stakeholder emotional signal rather than applying brand tint until brand.md is created (either by a future init pass or by the champion themselves once the project's voice is clearer from evidence).
+**PLAN.md sets high expectations.** The document is polished and describes a complete, sophisticated system. A reader who skims it may believe all features are implemented. The README's "v0.0.2 scope" section lists what's working vs. coming later — this is the right approach, but it requires the reader to notice and read it. The champion should watch for cases where the evaluator's journey stalls because they tried a described feature that doesn't exist yet.

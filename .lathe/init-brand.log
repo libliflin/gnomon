@@ -1,14 +1,15 @@
-`.lathe/brand.md` is written. Here's what it found and why the claims land:
+`.lathe/brand.md` is written. Here's what the evidence said:
 
-**Identity:** Precise, clinical, unapologetic — grounded in the `--help` about text ("A CI gate, not a dashboard"), the PLAN.md self-descriptions ("unapologetically opinionated," "hostile defaults"), and the fact that the tool audits its own build time.
+**Identity:** Plainspoken enforcer, working-developer voice. Short sentences, specific numbers, named culprits. The strictness isn't a side effect — it's the product. Anchored in `PLAN.md` ("Hostile defaults are the *product*. If they feel rude, it is because they are doing their job.") and the CLI `about` string ("A CI gate, not a dashboard.").
 
-**Five edge-case anchors:**
-- **When we say no:** "Does not exist. Will not be added. A PR proposing it will be closed." — verbatim from PLAN.md §6
-- **When we fail:** `"33 KiB over — main.css (28 KiB), vendor.css (5 KiB)"` — the violation format from `src/audit.rs:203–225`
-- **When we name a bad practice:** `"likely LCP gaming"` — from `src/audit.rs:301`, the word "gaming" not "pattern"
-- **When we onboard:** One sentence + binary distinction from `src/cli.rs:11`
-- **When we pass:** `PASS  all budgets met` — single line, dimmed, quieter than failure
+**The five edge cases, all grounded:**
 
-**The thing we'd never do:** Introduce a yellow/warning state — cited directly from PLAN.md §16 "There is no yellow state."
+- **When we say no:** Three flat sentences, done. `"Does not exist. Will not be added. A PR proposing it will be closed."` No apology, no alternative offered unless the alternative is "use a different tool."
+- **When we fail:** Delta first, culprit named. `"3 KiB over 100 KiB budget — images (82 KiB), css (13 KiB)"`. On theater: name the trick. `"likely LCP gaming"` — not "potential performance concern."
+- **When we explain:** Fact, em dash, mechanism, one sentence. Never narrative.
+- **When we succeed:** Quiet. `"all budgets met"` in dimmed text. Passing is the expected state.
+- **When we onboard:** Same voice as the tool. Position before features.
 
-**Three signals to preserve:** ALL-CAPS verdict words, the em-dash rhythm in violation details, and categorical negation in refusals ("Does not exist. Will not be added.").
+**The thing we'd never do:** Make the user hunt for which file caused the violation. Violations must be pastable — copy-pasteable into Slack or a PR comment and stand alone. This was the explicit principle behind champion cycle 18.
+
+**Three signals to preserve:** Lowercase imperative commits, delta-first violation format, adversarial-case comments that explain why a rule exists and what it's catching.
