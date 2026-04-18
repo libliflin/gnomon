@@ -458,6 +458,17 @@ mod tests {
         assert_eq!(a.img_missing_dimensions, 0);
     }
 
+    // ── inline_script_bytes ───────────────────────────────────────────────────
+
+    #[test]
+    fn inline_script_body_is_counted() {
+        let body = r#"console.log("hello");"#;
+        let html = format!(r#"<!doctype html><html><head><script>{body}</script></head><body></body></html>"#);
+        let a = analyze(&html);
+        assert_eq!(a.inline_script_bytes, body.len() as u64);
+        assert!(a.script_urls.is_empty(), "inline script must not produce a script_url entry");
+    }
+
     // ── script with src + inline body ─────────────────────────────────────────
 
     #[test]
