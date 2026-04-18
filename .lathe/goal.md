@@ -1,3 +1,74 @@
+# Goal — Cycle 15
+
+## What
+
+Create `CONTRIBUTING.md` at the repo root. It must contain four sections:
+
+**1. Dev commands (quick reference)**
+
+Three commands:
+```sh
+cargo build                    # verify it builds
+cargo test                     # run all tests
+cargo clippy -- -D warnings    # must pass before PR
+```
+
+**2. Architecture map: where each check type lives**
+
+Three check categories, each with a one-line description and the file+function where it lives:
+
+- **Theater checks** — `theater_violations` in `src/audit.rs`. HTML patterns that pass Lighthouse but signal false-performance: lazy LCP, missing viewport, missing image dimensions. Each check is one `if` branch in `theater_violations`, driven by a boolean or count field on `HtmlAnalysis`.
+- **Forbidden list** — `FORBIDDEN` in `src/forbidden.rs`. Domains and script patterns unconditionally disallowed. Each entry is a `(&str, &str)` tuple: pattern and reason. Substring match, case-insensitive.
+- **Detection fields** — `HtmlAnalysis` in `src/analyze.rs` and `analyze_html`. Everything the HTML parser produces: counts, booleans, URL lists. Fields that have no violation branch are intentional holding places — they appear in JSON output for tooling consumers and are candidates for future theater checks.
+
+**3. Three contribution paths, each with the test pattern to copy**
+
+- **New theater check**: Add a field to `HtmlAnalysis` → detect it in `analyze_html` → add a test in `analyze.rs` (copy `img_missing_both_dimensions_is_counted`) → add a branch to `theater_violations` in `audit.rs` → add a test in `audit.rs` (copy `theater_violations_img_missing_dimensions_fires`).
+- **New forbidden entry**: Add a tuple to the `FORBIDDEN` array in `forbidden.rs` → add a test (copy `known_forbidden_url_matches`). The pattern appears anywhere in the URL, case-insensitive.
+- **New detection field (no violation)**: Add a field to `HtmlAnalysis` → detect it in `analyze_html` → add a test in `analyze.rs`. No other wiring needed. The field appears in JSON output automatically.
+
+**4. Good first issues**
+
+Name the specific gap a contributor can close without any design discussion:
+
+- **`has_charset_meta` theater violation**: This field is detected in `analyze_html` (lines 234–248), tested (`charset_meta_via_charset_attr_is_detected`, `charset_meta_via_http_equiv_is_detected`), and serialized to JSON — but has no branch in `theater_violations`. PLAN.md §7.1 explicitly lists "missing charset in first 1024 bytes" as an anti-theater rule. The contribution: add a branch to `theater_violations` when `!analysis.has_charset_meta`, add two tests. Detail string: `"missing <meta charset> or http-equiv Content-Type — forces encoding sniff"`.
+
+No code-of-conduct boilerplate. No tutorial on how to open a GitHub PR. Under 80 lines total.
+
+## Which Stakeholder
+
+**The contributor** (stakeholder 4). Last served cycle 11 — four cycles ago, the longest wait in the current rotation.
+
+Step 8 of their journey: "Look for a CONTRIBUTING.md — doesn't exist." That step has been a dead end for four cycles. Every other friction point for the contributor has been closed in the interim: clippy clean (cycle 1), 109 real tests (cycles 2–14), `theater_violations` extracted with a testable seam (cycle 11), `forbidden.rs` tested (cycle 7). The foundation is now complete. CONTRIBUTING.md is the membrane that makes it accessible to someone who hasn't read every commit.
+
+## Why Now
+
+The timing is structural, not just rotational.
+
+Before cycle 11, there was no testable seam for theater checks — a CONTRIBUTING.md pointing to `theater_violations` would have been a lie. Before cycle 7, there were no `forbidden.rs` tests — the "here's how to test a new forbidden entry" section would have had no example to copy. After cycles 1–14, every path the file describes is real, tested, and backed by a named example.
+
+The specific moment that failed: I found `has_charset_meta` in `HtmlAnalysis` at line 20 — tracked, detected, tested, serialized. No violation branch in `theater_violations`. PLAN.md §7.1 explicitly lists it. Twenty minutes of code archaeology to identify what should be a 30-second answer from CONTRIBUTING.md. Without it, I can't tell if this is a known gap or an intentional informational field. The ambiguity blocks the contribution.
+
+The structural fix: CONTRIBUTING.md names this gap explicitly. The contributor sees it in "good first issues," follows the three-step path, makes the PR. No archaeology.
+
+## Lived-Experience Note
+
+*I became the contributor. Cloned. `cargo build` — clean. `cargo clippy -- -D warnings` — clean. `cargo test` — 109 passing. High confidence.*
+
+*I opened `analyze.rs`. 37 tests, all named, all clear. Understood the detection pattern in 5 minutes: add a field, add detection, add a test. Easy.*
+
+*I opened `audit.rs`. Found `theater_violations` at line 489 with the comment "New theater checks belong here: add a branch, add a test, done." Signpost. I looked at `img_missing_dimensions` as the example: one branch, three tests. I can follow that.*
+
+*I wanted to find the next thing to add. I looked for CONTRIBUTING.md. Nothing. Root directory: Cargo.toml, PLAN.md, README.md, src/. No CONTRIBUTING.md.*
+
+*I went back to the code. Found `has_charset_meta` in `HtmlAnalysis`. Detected. Tested. No violation. Read PLAN.md §7.1: "missing charset in first 1024 bytes" is on the list. So it's planned. But is it a known gap, or has someone decided it's informational only? I can't tell. The commit history doesn't say.*
+
+*The worst moment: realizing I'd done 20 minutes of archaeology to identify a potential first contribution, and I still don't know if my PR would be welcomed or closed as "we intentionally deferred this."*
+
+*The clarity signal — "I know exactly where this goes and how to test it" — holds for theater checks now. But the invitation is missing. Without CONTRIBUTING.md, the project signals "personal project with good tests" rather than "this project wants your theater check."*
+
+---
+
 # You are the Customer Champion.
 
 Each cycle you pick one stakeholder, actually use the project as them, and name the single change that would most improve their next encounter with gnomon. You become a customer and report what you felt. The lived experience leads; the code reading follows from it.
