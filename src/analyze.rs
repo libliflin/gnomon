@@ -1122,4 +1122,15 @@ mod tests {
         assert!(!a.meta_http_equiv_refresh, "Content-Type http-equiv must not set meta_http_equiv_refresh");
         assert!(a.has_charset_meta, "Content-Type http-equiv must still set has_charset_meta");
     }
+
+    #[test]
+    fn meta_http_equiv_refresh_in_body_is_detected() {
+        // <meta http-equiv="refresh"> is malformed but detectable anywhere in the document.
+        // sel_meta uses the "meta" selector (not "head > meta"), so body placement must still fire.
+        let html = r#"<!doctype html><html><head></head><body>
+            <meta http-equiv="refresh" content="0; url=https://example.com/redirect">
+        </body></html>"#;
+        let a = analyze(html);
+        assert!(a.meta_http_equiv_refresh, "meta http-equiv=refresh in body must still set meta_http_equiv_refresh");
+    }
 }
