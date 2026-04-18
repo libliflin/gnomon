@@ -462,7 +462,7 @@ fn requests_count_detail(
 
     let mut parts: Vec<(&str, u32)> =
         vec![("js", js_count), ("css", css_count), ("img", img_count), ("font", font_count)];
-    parts.sort_unstable_by_key(|&(_, n)| std::cmp::Reverse(n));
+    parts.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
 
     let parts: Vec<String> = parts
         .iter()
@@ -883,5 +883,15 @@ mod tests {
         // All requests are HTML/other (unclassified). No named types, but total still shown.
         let detail = requests_count_detail(2, 5, &[], &[], &[], &[]);
         assert_eq!(detail, "2 over (5 total)");
+    }
+
+    #[test]
+    fn requests_count_detail_tie_breaks_alphabetically() {
+        // css and img both have 2 resources — secondary sort is alphabetical by label.
+        // "css" < "img" alphabetically, so css must appear first on a tie.
+        let css = vec![make_res("a.css", 100), make_res("b.css", 200)];
+        let images = vec![make_res("a.png", 100), make_res("b.png", 200)];
+        let detail = requests_count_detail(3, 5, &css, &[], &images, &[]);
+        assert_eq!(detail, "3 over — 2 css, 2 img (5 total)");
     }
 }
