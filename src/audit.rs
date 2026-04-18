@@ -170,10 +170,10 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     }
 
     // Sort each category descending by size so top contributors are first.
-    css_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-    js_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-    image_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-    font_resources.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    css_resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+    js_resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+    image_resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
+    font_resources.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
 
     totals.total_bytes =
         totals.html_brotli + totals.css_bytes + totals.js_bytes + totals.image_bytes + totals.font_bytes;
