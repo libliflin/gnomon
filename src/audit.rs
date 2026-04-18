@@ -206,7 +206,19 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     bytes_check(&mut violations, "js", totals.js_bytes, budget.preset.bytes.js, &js_resources);
     bytes_check(&mut violations, "images", totals.image_bytes, budget.preset.bytes.images, &image_resources);
     bytes_check(&mut violations, "fonts", totals.font_bytes, budget.preset.bytes.fonts, &font_resources);
-    bytes_check(&mut violations, "total", totals.total_bytes, budget.preset.bytes.total, &[]);
+    // Category contributors for the total bytes violation — sorted descending by size,
+    // zero-byte categories omitted so "total: 3 KiB over — images (82 KiB), css (13 KiB)"
+    // reads cleanly even when most categories are empty.
+    let mut total_contributors: Vec<(String, u64)> = vec![
+        ("html".to_string(), totals.html_brotli),
+        ("css".to_string(), totals.css_bytes),
+        ("js".to_string(), totals.js_bytes),
+        ("images".to_string(), totals.image_bytes),
+        ("fonts".to_string(), totals.font_bytes),
+    ];
+    total_contributors.retain(|&(_, bytes)| bytes > 0);
+    total_contributors.sort_unstable_by_key(|&(_, bytes)| std::cmp::Reverse(bytes));
+    bytes_check(&mut violations, "total", totals.total_bytes, budget.preset.bytes.total, &total_contributors);
 
     // Count budgets.
     {
@@ -1026,6 +1038,46 @@ mod tests {
         let js = vec![make_res("https://cdn.example.com/app.js", 40_000)];
         let detail = requests_count_detail(2, 0, 2, &[], &js, &[], &[]);
         assert_eq!(detail, "2 over budget of 0 — 1 js (2 total)");
+    }
+
+    // ---- total bytes violation category contributors ----
+
+    #[test]
+    fn total_bytes_violation_names_top_two_categories() {
+        // html 8 KiB, css 13 KiB, images 82 KiB → total 103 KiB > 100 KiB budget.
+        // Top-2 contributors by size are images and css.
+        let mut total_contributors: Vec<(String, u64)> = vec![
+            ("html".to_string(), 8_192u64),
+            ("css".to_string(), 13_312u64),
+            ("images".to_string(), 83_968u64),
+        ];
+        total_contributors.sort_unstable_by_key(|&(_, b)| std::cmp::Reverse(b));
+        let total: u64 = 8_192 + 13_312 + 83_968;
+        let budget: u64 = 102_400; // 100 KiB
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "total", total, budget, &total_contributors);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(detail.contains("images"), "top category images must appear: {detail}");
+        assert!(detail.contains("css"), "second category css must appear: {detail}");
+        // html is third — must not appear in top-2
+        assert!(!detail.contains("html"), "third category html must not appear in top-2: {detail}");
+    }
+
+    #[test]
+    fn total_bytes_violation_names_all_when_two_categories() {
+        // Only two non-zero categories: css and js. Both must appear.
+        let mut total_contributors: Vec<(String, u64)> =
+            vec![("css".to_string(), 20_480u64), ("js".to_string(), 10_240u64)];
+        total_contributors.sort_unstable_by_key(|&(_, b)| std::cmp::Reverse(b));
+        let total: u64 = 20_480 + 10_240;
+        let budget: u64 = 25_600; // 25 KiB — over by ~5 KiB
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "total", total, budget, &total_contributors);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(detail.contains("css"), "css must appear: {detail}");
+        assert!(detail.contains("js"), "js must appear: {detail}");
     }
 
     // ---- theater_violations ----
