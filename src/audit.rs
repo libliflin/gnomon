@@ -608,6 +608,19 @@ mod tests {
     }
 
     #[test]
+    fn fonts_count_detail_exactly_two_fonts() {
+        // Exactly 2 fonts — both should appear (take(2) on a 2-element slice).
+        let fonts = vec![
+            ("https://cdn.example.com/serif-regular.woff2".to_string(), 46080u64),
+            ("https://cdn.example.com/sans-regular.woff2".to_string(), 12288u64),
+        ];
+        assert_eq!(
+            fonts_count_detail(1, &fonts),
+            "1 over — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
+        );
+    }
+
+    #[test]
     fn fonts_count_detail_top_two_shown() {
         let fonts = vec![
             ("https://cdn.example.com/serif-regular.woff2".to_string(), 46080u64),
@@ -618,6 +631,21 @@ mod tests {
         assert_eq!(
             fonts_count_detail(1, &fonts),
             "1 over — serif-regular.woff2 (45 KiB), sans-regular.woff2 (12 KiB)"
+        );
+    }
+
+    #[test]
+    fn third_party_domains_detail_over_count_differs_from_domain_count() {
+        // budget=1, actual=3 → over=2, but all 3 domains are listed.
+        // The "over" prefix reflects the budget delta; the domain list is exhaustive.
+        let domains = vec![
+            "google-analytics.com".to_string(),
+            "googletagservices.com".to_string(),
+            "googlesyndication.com".to_string(),
+        ];
+        assert_eq!(
+            third_party_domains_detail(2, &domains),
+            "2 over — google-analytics.com, googletagservices.com, googlesyndication.com"
         );
     }
 }
