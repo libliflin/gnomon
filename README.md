@@ -51,7 +51,7 @@ Add gnomon to a GitHub Actions workflow using the pre-built binary:
   run: gnomon audit https://staging.your-site.com
 ```
 
-For violations as inline PR diff annotations (requires GitHub code scanning):
+For violations surfaced in GitHub code scanning (requires SARIF upload):
 
 ```yaml
 - name: Install gnomon
@@ -66,7 +66,7 @@ For violations as inline PR diff annotations (requires GitHub code scanning):
     sarif_file: results.sarif
 ```
 
-Exit code 1 (violations) must not abort the workflow before the upload step — the `; true` suffix ensures the SARIF file is always uploaded. GitHub surfaces each violation as an inline annotation on the PR diff.
+Exit code 1 (violations) must not abort the workflow before the upload step — the `; true` suffix ensures the SARIF file is always uploaded. Gnomon violations are page-level, not line-level, so GitHub surfaces them as annotations on the workflow run rather than inline PR diff comments — the correct behavior for a tool that audits a URL, not a source file.
 
 ## Use
 
