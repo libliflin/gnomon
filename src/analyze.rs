@@ -416,4 +416,104 @@ mod tests {
         let a = analyze(html);
         assert_eq!(a.render_blocking_in_head, 0);
     }
+
+    // ── async script ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn async_script_in_head_is_not_blocking() {
+        let html = r#"<!doctype html><html><head>
+            <script src="/app.js" async></script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.render_blocking_in_head, 0);
+        assert!(!a.script_urls[0].render_blocking);
+    }
+
+    // ── img_missing_dimensions ────────────────────────────────────────────────
+
+    #[test]
+    fn img_missing_both_dimensions_is_counted() {
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg">
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.img_missing_dimensions, 1);
+    }
+
+    #[test]
+    fn img_missing_one_dimension_is_counted() {
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg" width="800">
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.img_missing_dimensions, 1);
+    }
+
+    #[test]
+    fn img_with_both_dimensions_is_not_counted() {
+        let html = r#"<!doctype html><html><body>
+            <img src="/hero.jpg" width="800" height="400">
+        </body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.img_missing_dimensions, 0);
+    }
+
+    // ── script with src + inline body ─────────────────────────────────────────
+
+    #[test]
+    fn script_with_src_and_body_does_not_count_inline_bytes() {
+        // When <script src="..."> also has inline content, the external src
+        // path is taken and the inline body must NOT roll into inline_script_bytes.
+        let html = r#"<!doctype html><html><head>
+            <script src="/app.js">console.log("this body is ignored");</script>
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(a.inline_script_bytes, 0, "inline body of a src-script must not count");
+        assert_eq!(a.script_urls.len(), 1);
+    }
+
+    // ── data: URI filtering ───────────────────────────────────────────────────
+
+    #[test]
+    fn data_uri_img_src_is_not_added_to_image_urls() {
+        let html = r#"<!doctype html><html><body>
+            <img src="data:image/gif;base64,R0lGOD" width="1" height="1">
+        </body></html>"#;
+        let a = analyze(html);
+        assert!(a.image_urls.is_empty(), "data: URI must not be added to image_urls");
+    }
+
+    // ── classify ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn classify_url_with_query_string_uses_extension() {
+        // Query string before the extension must not confuse the classifier.
+        assert_eq!(classify("/style.css?v=123", None), AssetKind::Css);
+        assert_eq!(classify("/app.js?v=abc", None), AssetKind::Js);
+    }
+
+    #[test]
+    fn classify_content_type_with_charset_suffix() {
+        // Content-type with charset must still match.
+        assert_eq!(classify("/x", Some("text/css; charset=utf-8")), AssetKind::Css);
+        assert_eq!(classify("/x", Some("text/html; charset=utf-8")), AssetKind::Html);
+    }
+
+    #[test]
+    fn classify_json_extension_is_js() {
+        // .json is intentionally classified as Js — confirm the intent holds.
+        assert_eq!(classify("/data.json", None), AssetKind::Js);
+    }
+
+    #[test]
+    fn classify_no_extension_no_content_type_is_other() {
+        assert_eq!(classify("/api/endpoint", None), AssetKind::Other);
+        assert_eq!(classify("/no-ext", None), AssetKind::Other);
+    }
+
+    #[test]
+    fn classify_content_type_wins_over_extension() {
+        // Content-type takes priority over extension when both are present.
+        assert_eq!(classify("/file.js", Some("text/css")), AssetKind::Css);
+    }
 }
