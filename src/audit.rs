@@ -14,6 +14,8 @@ use crate::violation::{Violation, ViolationKind};
 pub struct AuditReport {
     pub url: String,
     pub gnomon_version: &'static str,
+    pub preset: &'static str,
+    pub pass: bool,
     pub elapsed_ms: u128,
     pub html: Fetched,
     pub html_analysis: HtmlAnalysis,
@@ -336,6 +338,8 @@ pub async fn audit_url(url_str: &str, budget: &Budget) -> anyhow::Result<AuditRe
     Ok(AuditReport {
         url: url_str.to_string(),
         gnomon_version: env!("CARGO_PKG_VERSION"),
+        preset: budget.preset.name,
+        pass: violations.is_empty(),
         elapsed_ms: started.elapsed().as_millis(),
         html: root,
         html_analysis: analysis,
@@ -1170,6 +1174,63 @@ mod tests {
             charset_vios.is_empty(),
             "present charset meta must produce no violation"
         );
+    }
+
+    // ---- AuditReport: preset and pass fields ----
+
+    use crate::fetch::Fetched;
+
+    fn minimal_fetched() -> Fetched {
+        Fetched {
+            url: String::new(),
+            status: 200,
+            content_type: None,
+            wire_bytes: 0,
+            raw_bytes: 0,
+            brotli_bytes: 0,
+            error: None,
+            body: None,
+        }
+    }
+
+    fn minimal_report(preset: &'static str, violations: Vec<Violation>) -> AuditReport {
+        let pass = violations.is_empty();
+        AuditReport {
+            url: "https://example.com".to_string(),
+            gnomon_version: "0.0.0",
+            preset,
+            pass,
+            elapsed_ms: 0,
+            html: minimal_fetched(),
+            html_analysis: HtmlAnalysis::default(),
+            resources: vec![],
+            totals: Totals::default(),
+            violations,
+        }
+    }
+
+    #[test]
+    fn audit_report_pass_true_and_preset_set_when_no_violations() {
+        // pass must be true and preset must reflect the name used at construction.
+        let r = minimal_report("insley", vec![]);
+        assert!(r.pass, "pass must be true when violations is empty");
+        assert_eq!(r.preset, "insley");
+    }
+
+    #[test]
+    fn audit_report_pass_false_when_violations_present() {
+        // pass must be false as soon as there is at least one violation.
+        // preset carries the name regardless of pass state.
+        let vios = vec![Violation {
+            kind: ViolationKind::Theater,
+            metric: "charset_meta",
+            budget: 0,
+            actual: 1,
+            detail: "test violation".into(),
+        }];
+        let r = minimal_report("mcmaster", vios);
+        assert!(!r.pass, "pass must be false when violations is non-empty");
+        assert_eq!(r.preset, "mcmaster");
     }
 
     #[test]
