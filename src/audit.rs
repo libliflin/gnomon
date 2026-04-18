@@ -897,6 +897,23 @@ mod tests {
     }
 
     #[test]
+    fn requests_count_detail_inline_only_css() {
+        // CSS list contains only a synthetic inline entry (no external CSS file).
+        // Inline entries must not count as requests, so css must not appear in the breakdown.
+        let css = vec![make_res("(inline <style>)", 50_000)];
+        let detail = requests_count_detail(1, 2, &css, &[], &[], &[]);
+        assert_eq!(detail, "1 over (2 total)");
+    }
+
+    #[test]
+    fn requests_count_detail_inline_only_js() {
+        // JS list contains only a synthetic inline entry (no external JS file).
+        let js = vec![make_res("(inline <script>)", 50_000)];
+        let detail = requests_count_detail(1, 2, &[], &js, &[], &[]);
+        assert_eq!(detail, "1 over (2 total)");
+    }
+
+    #[test]
     fn requests_count_detail_tie_breaks_alphabetically() {
         // css and img both have 2 resources — secondary sort is alphabetical by label.
         // "css" < "img" alphabetically, so css must appear first on a tie.
