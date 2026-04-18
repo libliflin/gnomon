@@ -99,14 +99,20 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
         if rel.contains("stylesheet") {
             // Print-only and disabled stylesheets are not render-blocking.
             let blocking = in_head && !disabled && !(media == "print" || media.contains("print"));
-            a.stylesheet_urls.push(ResourceRef {
-                url: resolved,
-                render_blocking: blocking,
-                is_lcp_candidate: false,
-                is_lazy: false,
-            });
-            if blocking {
-                a.render_blocking_in_head += 1;
+            // Deduplicate: a preload-as-style tag for the same URL may have already
+            // added a render-blocking entry. Count and record each URL only once.
+            let already_blocking =
+                blocking && a.stylesheet_urls.iter().any(|r| r.url == resolved && r.render_blocking);
+            if !already_blocking {
+                a.stylesheet_urls.push(ResourceRef {
+                    url: resolved,
+                    render_blocking: blocking,
+                    is_lcp_candidate: false,
+                    is_lazy: false,
+                });
+                if blocking {
+                    a.render_blocking_in_head += 1;
+                }
             }
         } else if rel.contains("preload") {
             a.preload_hint_count += 1;
@@ -132,13 +138,19 @@ pub fn analyze_html(html: &str, base: &Url) -> HtmlAnalysis {
                 "style" => {
                     // Anti-theater: preload-as-style that is swapped on load is a
                     // render-blocking stylesheet in disguise. We flag both forms.
-                    a.stylesheet_urls.push(ResourceRef {
-                        url: resolved,
-                        render_blocking: true,
-                        is_lcp_candidate: false,
-                        is_lazy: false,
-                    });
-                    a.render_blocking_in_head += 1;
+                    // Deduplicate: a rel="stylesheet" tag for the same URL may have
+                    // already added a render-blocking entry. Count each URL once.
+                    let already_blocking =
+                        a.stylesheet_urls.iter().any(|r| r.url == resolved && r.render_blocking);
+                    if !already_blocking {
+                        a.stylesheet_urls.push(ResourceRef {
+                            url: resolved,
+                            render_blocking: true,
+                            is_lcp_candidate: false,
+                            is_lazy: false,
+                        });
+                        a.render_blocking_in_head += 1;
+                    }
                 }
                 _ => a.other_urls.push(ResourceRef {
                     url: resolved,
@@ -405,6 +417,56 @@ mod tests {
         assert!(
             a.stylesheet_urls.iter().any(|r| r.render_blocking),
             "the preloaded stylesheet must be flagged render_blocking"
+        );
+    }
+
+    #[test]
+    fn preload_and_stylesheet_same_url_counts_once() {
+        // Next.js and other frameworks emit both tags for the same CSS file.
+        // Gnomon must count and record each unique URL exactly once.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="style" href="/main.css">
+            <link rel="stylesheet" href="/main.css">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(
+            a.render_blocking_in_head, 1,
+            "same URL via preload+stylesheet must count as 1 render-blocking resource, not 2"
+        );
+        let blocking_entries: Vec<_> = a.stylesheet_urls.iter().filter(|r| r.render_blocking).collect();
+        assert_eq!(
+            blocking_entries.len(), 1,
+            "stylesheet_urls must contain exactly one render-blocking entry for the URL"
+        );
+    }
+
+    #[test]
+    fn preload_and_stylesheet_same_url_stylesheet_first_counts_once() {
+        // Same deduplication when the stylesheet tag appears before the preload tag.
+        let html = r#"<!doctype html><html><head>
+            <link rel="stylesheet" href="/vendor.css">
+            <link rel="preload" as="style" href="/vendor.css">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(
+            a.render_blocking_in_head, 1,
+            "stylesheet-first ordering must also deduplicate to 1 render-blocking resource"
+        );
+    }
+
+    #[test]
+    fn multiple_distinct_preload_and_stylesheet_urls_count_separately() {
+        // Deduplication must not collapse different URLs.
+        let html = r#"<!doctype html><html><head>
+            <link rel="preload" as="style" href="/main.css">
+            <link rel="stylesheet" href="/main.css">
+            <link rel="preload" as="style" href="/vendor.css">
+            <link rel="stylesheet" href="/vendor.css">
+        </head><body></body></html>"#;
+        let a = analyze(html);
+        assert_eq!(
+            a.render_blocking_in_head, 2,
+            "two distinct render-blocking URLs must count as 2, not 4"
         );
     }
 
