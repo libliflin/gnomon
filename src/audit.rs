@@ -1077,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn theater_violations_both_flags_emit_two_violations() {
+    fn theater_violations_lazy_lcp_and_missing_viewport_emit_two() {
         let analysis = HtmlAnalysis {
             lazy_lcp_candidate: true,
             has_viewport_meta: false,
