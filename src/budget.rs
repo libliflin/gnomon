@@ -120,7 +120,10 @@ pub fn resolve_budget(
     preset: PresetName,
     config_path: Option<&Path>,
 ) -> anyhow::Result<Budget> {
-    if let Some(p) = config_path {
+    let auto = Path::new("gnomon.toml");
+    let effective = config_path.or_else(|| if auto.exists() { Some(auto) } else { None });
+
+    if let Some(p) = effective {
         let text = std::fs::read_to_string(p)
             .map_err(|e| anyhow::anyhow!("read {}: {e}", p.display()))?;
         let cfg: ConfigFile = toml::from_str(&text)
@@ -365,6 +368,67 @@ mod tests {
             out.contains("fonts               = 0    # 0 — no web fonts; system fonts only"),
             "count.fonts zero comment wrong: {out}"
         );
+    }
+
+    // ── resolve_budget: auto-discovery ──────────────────────────────────────
+
+    /// CWD is process-global state. Serialize all tests that touch it.
+    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn resolve_budget_auto_discovers_gnomon_toml_in_cwd() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let original = std::env::current_dir().unwrap();
+
+        let tmp = std::env::temp_dir().join("gnomon_test_autodiscover");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("gnomon.toml"), preset_toml(PresetName::Mcmaster)).unwrap();
+
+        std::env::set_current_dir(&tmp).unwrap();
+        let result = resolve_budget(PresetName::Insley, None);
+        std::env::set_current_dir(&original).unwrap();
+
+        let budget = result.unwrap();
+        // Loaded mcmaster from gnomon.toml — not the insley default that was passed in.
+        assert_eq!(budget.preset.name, "mcmaster");
+    }
+
+    #[test]
+    fn resolve_budget_explicit_config_overrides_auto_discovery() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let original = std::env::current_dir().unwrap();
+
+        // CWD has a mcmaster gnomon.toml — but explicit --config should win.
+        let tmp = std::env::temp_dir().join("gnomon_test_explicit_override");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("gnomon.toml"), preset_toml(PresetName::Mcmaster)).unwrap();
+        let explicit = tmp.join("explicit.toml");
+        std::fs::write(&explicit, preset_toml(PresetName::Insley)).unwrap();
+
+        std::env::set_current_dir(&tmp).unwrap();
+        let result = resolve_budget(PresetName::Mcmaster, Some(&explicit));
+        std::env::set_current_dir(&original).unwrap();
+
+        let budget = result.unwrap();
+        assert_eq!(budget.preset.name, "insley");
+    }
+
+    #[test]
+    fn resolve_budget_falls_back_to_preset_when_no_file() {
+        let _guard = CWD_LOCK.lock().unwrap();
+        let original = std::env::current_dir().unwrap();
+
+        // Use a temp dir that definitely has no gnomon.toml.
+        let tmp = std::env::temp_dir().join("gnomon_test_no_file");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let _ = std::fs::remove_file(tmp.join("gnomon.toml")); // ensure absent
+
+        std::env::set_current_dir(&tmp).unwrap();
+        let result = resolve_budget(PresetName::Mcmaster, None);
+        std::env::set_current_dir(&original).unwrap();
+
+        let budget = result.unwrap();
+        assert_eq!(budget.preset.name, "mcmaster");
     }
 
     // ── round-trip: generated TOML parses back ───────────────────────────────
