@@ -51,24 +51,15 @@ If the discovery algorithm points you to either of these fields, this is the exp
 
 ### When the scan returns empty
 
-If every `HtmlAnalysis` field is already covered or intentionally informational, the scan returns nothing. That does not mean the project is complete — it means the next check has not been added as a field yet. PLAN.md §4 lists anti-theater detections planned for static-HTML mode. Two that are checkable from the HTML document alone, with no browser or JavaScript execution required:
+If every `HtmlAnalysis` field is already covered or intentionally informational, the scan returns nothing. That does not mean the project is complete — it means the next check has not been added as a field yet. PLAN.md §4 lists anti-theater detections planned for static-HTML mode. One that is checkable from the HTML document alone, with no browser or JavaScript execution required:
 
-**1. `<script type="speculationrules">` with prerender**
+**`<link rel="preload" as="font">` without `crossorigin`**
 
-Sites prerender their own homepage so Lighthouse measures a warm cache instead of a cold first visit. Detectable: `<script type="speculationrules">` is a DOM element whose text content is JSON. If the JSON includes `"prerender"`, the page is gaming cold-cache LCP measurement.
+Font preloads without the `crossorigin` attribute are silently ignored by the browser. The font is fetched twice: once for the (discarded) preload, once for the actual use. The preload hint costs a connection slot and delivers nothing. Detectable from the HTML alone.
 
-- Field name: `has_speculation_prerender: bool`
-- Detection: in `analyze_html`, find `<script type="speculationrules">` elements, parse the text content, check for `"prerender"`.
-- Violation detail: `"<script type=\"speculationrules\"> with prerender — games cold-cache LCP measurement"`
-- Test template: copy `theater_violations_lazy_lcp_fires` (bool that fires when `true` — same structure as `lazy_lcp_candidate`).
-
-**2. `<picture>` element with no modern-format `<source>`**
-
-A `<picture>` element that lists only JPEG or PNG `<source>` entries (no `type="image/webp"` or `type="image/avif"`) provides no format-negotiation benefit. It is the same as a plain `<img>` with more markup. Detectable from the HTML alone.
-
-- Field name: `picture_missing_modern_source: u32` (count of `<picture>` elements with no WebP/AVIF source)
-- Detection: in `analyze_html`, find `<picture>` elements, check their `<source type="...">` children.
-- Violation detail: `"N <picture> element(s) with no WebP or AVIF source — format negotiation is decorative"`
+- Field name: `preload_font_no_crossorigin: u32` (count of font preloads missing the attribute)
+- Detection: in `analyze_html`, find `<link rel="preload" as="font">` elements without a `crossorigin` attribute. The `rel` attribute may be `"preload"` or contain it in a space-separated list; check `.attr("crossorigin").is_none()`.
+- Violation detail: `"N font preload(s) missing crossorigin — browser ignores the hint, font fetched twice"`
 - Test template: copy `img_missing_both_dimensions_is_counted` in `src/analyze.rs` for detection; copy `theater_violations_img_missing_dimensions_fires` in `src/audit.rs` for the violation branch.
 
 **What is NOT feasible in static mode:** PLAN.md §4 items that require JavaScript execution or a browser — hidden-until-interaction payloads, client-side-rendered shells, service workers, hydration timing — cannot be checked from HTML alone. They require the future `--measure` flag (headless Chromium). Do not add `HtmlAnalysis` fields for these; they belong in the measured-vitals path.
