@@ -1529,4 +1529,13 @@ mod tests {
         // Empty fetched list — boundary: zero images must never produce a violation.
         assert!(img_format_violation(&[]).is_none());
     }
+
+    #[test]
+    fn img_format_violation_excludes_fetch_errors() {
+        // A JPEG that errored must not produce a violation — content_type cannot be
+        // trusted when the fetch failed. Without this exclusion, a network blip on an
+        // image URL would produce a false img_format violation.
+        let fetched = vec![fetched_with_ct(Some("image/jpeg"), Some("connection refused"))];
+        assert!(img_format_violation(&fetched).is_none());
+    }
 }
