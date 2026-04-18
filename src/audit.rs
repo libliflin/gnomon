@@ -886,6 +886,17 @@ mod tests {
     }
 
     #[test]
+    fn requests_count_detail_inline_exclusion_css() {
+        // CSS resource list contains a synthetic inline entry — must not count as a request.
+        let css = vec![
+            make_res("https://cdn.example.com/main.css", 30_000),
+            make_res("(inline <style>)", 15_000),
+        ];
+        let detail = requests_count_detail(1, 2, &css, &[], &[], &[]);
+        assert_eq!(detail, "1 over — 1 css (2 total)");
+    }
+
+    #[test]
     fn requests_count_detail_tie_breaks_alphabetically() {
         // css and img both have 2 resources — secondary sort is alphabetical by label.
         // "css" < "img" alphabetically, so css must appear first on a tie.
