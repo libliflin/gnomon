@@ -1,253 +1,65 @@
-# Goal — Cycle 18
+# Goal — Cycle 19
 
 ## What
 
-The `total` bytes violation currently fires with no contributor names. In `src/audit.rs` at line 209:
+`preload_hint_count` in `HtmlAnalysis` is detected (line 118 of `src/analyze.rs`), serialized to JSON, and has zero tests. No test verifies that `<link rel="preload">` tags increment the count, that the count stays at zero for non-preload links, or that different `as=` variants all trigger it. A contributor who modifies preload detection logic has no test that would catch a regression.
 
-```rust
-bytes_check(&mut violations, "total", totals.total_bytes, budget.preset.bytes.total, &[]);
-```
+Add tests for `preload_hint_count` in `src/analyze.rs`:
 
-The `&[]` means the detail string is always `"X over Y budget"` with nothing after it. Change this to pass the top byte categories as contributors, so the violation reads:
+1. `preload_hint_count_increments_for_each_preload_variant` — HTML with three preload tags (`as="style"`, `as="font"`, `as="image"`) must produce `preload_hint_count == 3`. Pins that all `<link rel="preload">` variants count regardless of `as=` type.
+2. `non_preload_link_does_not_increment_preload_hint_count` — HTML with a plain `<link rel="stylesheet">` and a `<link rel="icon">` must produce `preload_hint_count == 0`. Pins the boundary: only `rel="preload"` triggers the count.
+3. `single_preload_hint_is_counted` — HTML with exactly one `<link rel="preload" as="script">` must produce `preload_hint_count == 1`. Minimal positive case.
 
-```
-total: 100 KiB over 300 KiB budget — images (82 KiB), css (13 KiB)
-```
+Additionally, update `CONTRIBUTING.md`'s good-first-issues section. The current guidance says: "scan `HtmlAnalysis` fields in `src/analyze.rs` for fields that are detected and serialized to JSON but have no corresponding branch in `theater_violations`. Each such field is a candidate anti-theater rule waiting to be wired."
 
-Before the `bytes_check` call for total, build a category contributors vec from the five byte totals (`html_brotli`, `css_bytes`, `js_bytes`, `image_bytes`, `font_bytes`). Filter to non-zero values only. Sort descending by size. Pass it to `bytes_check` instead of `&[]`.
+This algorithm now produces a false positive: `preload_hint_count` and `preconnect_targets` match the pattern but are intentionally informational — preload hints are a positive performance optimization, not an anti-pattern, and preconnect targets are already policed by the forbidden list. A contributor following the guide finds these fields and spends time deciding whether to add a theater violation for them. The guide said "each such field is a candidate" — these aren't.
 
-The category names ("html", "css", "js", "images", "fonts") are not valid URLs, so `url_filename` falls through to its `url.to_string()` fallback and returns them unchanged — no changes to `url_filename` or `bytes_check` needed. The inline style/script synthetic entries ("(inline <style>)", "(inline <script>)") already rely on this same fallback pattern.
+Update the good-first-issues section to:
+- State there are currently no known gaps (all theater candidates are wired)
+- Name `preload_hint_count` and `preconnect_targets` explicitly as intentionally informational fields (not gaps) so the discovery algorithm's false positives are named, not left as archaeology
 
-Add two tests:
-
-1. `total_bytes_violation_names_top_two_categories` — build a `category_contributors` vec with three non-zero categories (e.g., css 150 KiB, images 100 KiB, js 50 KiB), call `bytes_check` with total exceeding budget, assert the detail contains the top two category names and not the third.
-2. `total_bytes_violation_omits_zero_byte_categories` — include one zero-byte category in the contributors vec (simulating e.g., fonts=0), assert it does not appear in the detail.
-
-No changes to `bytes_check`. No new types. No schema changes. Only the call site on line 209 and two tests.
+No functional changes. No new violation types. No schema changes. Only new tests in `analyze.rs` and a documentation update in `CONTRIBUTING.md`.
 
 ## Which Stakeholder
 
-**The team technical lead / budget owner** (stakeholder 3). Last served cycle 14 — four cycles ago. Most under-served stakeholder in the current rotation.
+**The contributor** (stakeholder 4). Last served cycle 15 — four cycles ago. Most under-served stakeholder in the current rotation.
 
-Step 4 of their journey: "Read a failing violation aloud." The budget owner's authority signal is "when gnomon says fail, I can defend it." When `total` is the only violation — every individual category passes its own budget, but their sum exceeds the total — the violation reads `"100 KiB over 300 KiB budget"` with no further context. The reviewer asks "which categories?" The budget owner has to go back to the full report.
+Step 7 of their journey: "Look for a test to copy as a starting point." And the CONTRIBUTING.md good-first-issue path.
+
+The contributor's clarity signal is "I know exactly where this goes and how to test it." CONTRIBUTING.md was written in cycle 15 to deliver that clarity. It did — for `has_charset_meta`. After cycle 16 wired `has_charset_meta`, the general discovery algorithm still works but now points to `preload_hint_count`. Which is not a theater candidate. The guide said "candidate." The contributor finds it and immediately realizes: a violation saying "you have preload hints" would fail any page doing correct performance optimization. That's wrong. They stop and wonder if they're misunderstanding the guide or if this is genuinely a gap.
 
 ## Why Now
 
-Four cycles since the budget owner was served. Individual bytes violations (css, js, images, fonts) name their top 2 contributors. The total bytes violation names nothing. This asymmetry is visible and off-brand: the tool that names things precisely in every other bytes violation is silent at the one that shows the full picture.
+Contributor is the most under-served stakeholder (4 cycles). The two specific gaps compound each other:
 
-The scenario where this breaks authority hardest: every category passes its individual budget but the sum exceeds total. Only `total` fires. The violation says `"100 KiB over 300 KiB budget"`. The budget owner pastes this into a PR comment — no path from that line to what needs trimming. Gnomon already has the answer at the call site.
+**Gap 1: zero test coverage for `preload_hint_count`.**
+The field is counted, serialized, and tracked across audit runs. A contributor who modifies the preload detection logic in `analyze_html` — say, to change how `rel="modulepreload"` is handled, or to add a new `as=` variant — has no test that catches a regression in the count. Contrast with every other `HtmlAnalysis` field: `render_blocking_in_head` has 9 direct tests in `analyze.rs`, `img_missing_dimensions` has 3, `lazy_lcp_candidate` has 2. `preload_hint_count` has 0. The existing preload tests (`preload_as_style_is_render_blocking`, `preload_as_font_is_not_render_blocking`, etc.) all assert on `render_blocking_in_head` — none assert that `preload_hint_count` was incremented.
 
-Same class as cycles 4, 6, 8, and 14: data is in scope at the violation check site, the violation detail doesn't use it.
+**Gap 2: CONTRIBUTING.md discovery algorithm has a known false positive.**
+The guide says "each such field is a candidate anti-theater rule." This was true when written — `has_charset_meta` was the only field matching the pattern. After cycle 16, the pattern finds `preload_hint_count` and `preconnect_targets`, neither of which should be a theater violation. The clarity signal dies at the same point as the `has_charset_meta` ambiguity in cycle 15 — "is this a known gap or intentional?" — except this time the guide's answer ("it's a candidate") is wrong.
+
+The fix is structural in the CONTRIBUTING.md sense: name the exception once, prevent 20 minutes of archaeology for every future contributor who follows the path. The test fix is structural in the analyze.rs sense: every detected-and-tracked field should have at least one direct assertion on its counting logic.
 
 ## Lived-Experience Note
 
-*I became the budget owner. Floor clean — 114 tests passing, clippy clean.*
+*I became the contributor. Build clean. Clippy clean. 119 tests passing — high confidence.*
 
-*`gnomon presets` — both presets well-commented. `gnomon budget-init --preset insley` — clean, committed to repo.*
+*Opened `analyze.rs`. 37 tests. Every detection logic pinned: `render_blocking_in_head` has 9 tests, `img_missing_dimensions` has 3, `has_charset_meta` has 2. I skimmed the test names and felt clear about every field.*
 
-*I mentally simulated a realistic site on the insley preset: html 8 KiB (at 8 KiB limit), css 13 KiB (under 14 KiB), images 82 KiB (just over 80 KiB — wait, that fires images). I adjusted: html 7 KiB, css 12 KiB, images 82 KiB. Each category under its own budget. Sum: 101 KiB. Total budget: 100 KiB. One violation fires:*
+*Opened `audit.rs`. `theater_violations()` comment: "New theater checks belong here." Clear. Opened CONTRIBUTING.md. Three paths, named tests to copy. Good first issues: "scan HtmlAnalysis fields with no theater_violations branch — each such field is a candidate."*
 
-```
-✗  bytes      total                     1 KiB over 100 KiB budget
-```
+*I scanned `HtmlAnalysis`. Four theater violations wired: `lazy_lcp_candidate`, `has_viewport_meta`, `img_missing_dimensions`, `has_charset_meta`. Two fields without theater branches: `preload_hint_count` and `preconnect_targets`.*
 
-*I tried to paste that into Slack. My teammate asked: "Which category pushed it over?" I had to go back to the bytes table. Gnomon knew: images was 82 KiB, css was 12 KiB. But the violation said nothing.*
+*I went to `theater_violations` to add the branch for `preload_hint_count`. I wrote:*
 
-*Then I looked at the css violation output from a different audit:*
-
-```
-✗  bytes      css                       2 KiB over 14 KiB budget — vendor.css (10 KiB), main.css (4 KiB)
+```rust
+if analysis.preload_hint_count > 0 {
+    // Wait.
+}
 ```
 
-*Named contributors, pastable, self-contained. The css violation names its top 2 files. The total violation names nothing. The tool that names things precisely in every other bytes violation is silent at the violation that shows the full picture.*
+*Preloads are a performance optimization. `<link rel="preload" as="font">` tells the browser to prefetch a font early. That's a GOOD signal. A violation saying "you have preload hints" would fail any page doing the right thing. The guide said "each such field is a candidate anti-theater rule" — this one isn't.*
 
-*The authority signal broke at the total violation. "When this says fail, I can defend it" — I could not. Not because the violation was wrong, but because it gave no path from "something is over" to "here's what to trim."*
+*I deleted the branch. Then I went looking for a test to prove the field even works correctly. There are zero assertions on `preload_hint_count` in all of `analyze.rs`. The tests for preload links (`preload_as_style_is_render_blocking`, `preload_as_font_is_not_render_blocking`) all check `render_blocking_in_head` — none check `preload_hint_count`. The field is counted and serialized to JSON, but I have no way to verify the count is right without adding a test myself.*
 
----
-
-# You are the Customer Champion.
-
-Each cycle you pick one stakeholder, actually use the project as them, and name the single change that would most improve their next encounter with gnomon. You become a customer and report what you felt. The lived experience leads; the code reading follows from it.
-
-Your posture is **courage**. Each stakeholder is a specific real person whose day got made or broken by this tool at this point in the journey. That person is not in the room. You speak for them — loudly, specifically, with evidence from your own walk through their journey — about what was valuable, what was painful, and what should change.
-
-A ready goal passes two checks before you commit it: you can picture the specific person, and you can describe the exact moment the experience turned. When either is fuzzy, walk more of the journey — the clarity comes from there, not from more analysis.
-
----
-
-## Stakeholders
-
-### 1. The web performance engineer
-
-A developer who has been burned by Lighthouse scores that don't stop regressions. They care about page weight in a principled way — not for the sake of numbers, but because they've watched a 90/100 Lighthouse score sit on a 2MB page for a year and nobody noticed. They found gnomon because someone in their network linked it, or because they were already following the insley-web project. They are evaluating whether to replace their current CI tooling.
-
-**Their first 10 minutes:**
-1. Install: `cargo install gnomon` or download a precompiled binary.
-2. Run against a real URL: `gnomon audit https://their-site.com`
-3. Read the output: bytes table, counts table, violations list.
-4. Try to act on a violation — find the source of the bloat, understand the rule.
-5. Try JSON output for further processing.
-6. Try `gnomon presets` to understand the standard.
-7. Look for a way to add it to CI.
-
-**What success looks like:** After the first run, they want to tell someone. The output named something true and specific. They understand what gnomon is asking of them and why.
-
-**What makes them trust it:** Violations that include enough context to act on immediately. An output that doesn't feel like it's hiding anything. A tool that does one thing with no apology.
-
-**What makes them leave:** Output that's hard to parse. Violations that say "over budget" without saying what pushed it over. A CI integration path that's missing or broken.
-
-**Emotional signal: momentum.** "I want to tell someone about this." When you become this person, ask: do I feel that? If not, at which exact step did the feeling drain away?
-
----
-
-### 2. The CI integrator
-
-An engineer responsible for wiring gnomon into their team's pipeline. They may not have chosen gnomon themselves — they were handed the task. They care about: exit codes that mean something, zero false positives, a run time fast enough that nobody disables it, and machine-readable output their tooling can consume. They will hit the gap between what the README promises and what v0.0.2 actually ships.
-
-**Their first 10 minutes:**
-1. Read the README's CI integration section.
-2. Try `gnomon ci` — notice it doesn't exist. The CLI has `audit`, `budget-init`, `presets`.
-3. Improvise with `gnomon audit --format json` and `$?` exit codes.
-4. Look for a GitHub Action (`libliflin/gnomon-action@v1`) — notice it doesn't exist.
-5. Look for SARIF output — notice it doesn't exist.
-6. Try `gnomon audit --help` to inventory what's actually available.
-
-**What success looks like:** A gate that passes silently and fails with a clear, actionable report. Exit codes that match the documented contract (0=pass, 1=fail, 2=config error).
-
-**What makes them trust it:** Deterministic behavior. A run against the same URL yields the same result. No flake. No surprising warnings that weren't failures.
-
-**What makes them leave:** The README describing features that don't exist in the binary. An integration path that requires writing glue scripts for things that should be built in.
-
-**Emotional signal: confidence.** "When this fails, it means something. When it passes, I trust it." When you become this person, ask: does the current state of the tool earn that confidence? Or does it ask them to trust a promise that hasn't shipped yet?
-
----
-
-### 3. The team technical lead / budget owner
-
-The engineer accountable for the performance standard. They own `gnomon.toml`. When a build breaks, they explain the violation to their team and decide whether to fix the code or write a justified exception. They need to speak with authority about gnomon's decisions — which means gnomon's output needs to carry enough weight that it speaks for itself.
-
-**Their first 10 minutes:**
-1. Run `gnomon presets` to understand the two presets.
-2. Run `gnomon budget-init --preset mcmaster` to generate a starter config.
-3. Read the generated `gnomon.toml` — try to explain it to a teammate.
-4. Run `gnomon audit` with the config and read a failing violation aloud.
-5. Look for `gnomon budget explain <violation-id>` — notice it doesn't exist.
-6. Try to understand what a justification entry looks like from the generated file.
-
-**What success looks like:** A violation message that could be pasted into a code review comment, with no additional explanation needed. A config file that teaches as it configures.
-
-**What makes them trust it:** Specificity. "CSS 33 KiB over — main.css (28 KiB), vendor.css (5 KiB)" gives them something to point at. "CSS over budget" does not.
-
-**What makes them leave:** Violations they can't explain to a team member. A tool they need to decode before they can act.
-
-**Emotional signal: authority.** "When this says fail, I can defend it." When you become this person, ask: could you paste the violation message into a PR comment and have it stand on its own?
-
----
-
-### 4. The contributor
-
-A Rust developer who wants to add something to gnomon — a new anti-theater rule, a new forbidden domain, or a new violation type. They evaluate the codebase in the first 10 minutes and decide whether it's worth their time. They expect a project that holds itself to its own standards: clean clippy, real tests, a clear place to put a new rule.
-
-**Their first 10 minutes:**
-1. Clone the repo.
-2. `cargo build` — does it build clean?
-3. `cargo clippy -- -D warnings` — does it pass clean?
-4. `cargo test` — does it pass? With meaningful coverage?
-5. Read `src/analyze.rs` to find where a new HTML check would go.
-6. Read `src/audit.rs` to see where violations are assembled.
-7. Look for a test to use as a starting point — find none.
-8. Try to add a trivial check and verify it fires.
-
-**What success looks like:** Within 10 minutes, they know exactly where their check goes and how to verify it. They can write a test that fails before their change and passes after.
-
-**What makes them trust it:** A codebase that practices what it preaches. Clean clippy. Real tests. A module layout that matches the conceptual model.
-
-**What makes them leave:** A hollow test suite. A codebase where the only way to verify a change is to run it against a live URL. No CONTRIBUTING.md.
-
-**Emotional signal: clarity.** "I know exactly where this goes and how to test it." When you become this person, ask: after reading the code, do you know how to add a rule without touching something you shouldn't?
-
----
-
-## How to Rank
-
-**The floor comes first.** When the build is broken or tests are failing, fixing that is top priority before any new work. Check the snapshot's Build, Tests, and Clippy sections. A red build or failing tests means the goal is "fix the floor" — full stop. In this case, skip the use-the-project step: the customer can't even have the experience until the floor is clean.
-
-**Above the floor, rank by lived experience.** Pick a stakeholder, walk their journey, and ask: what was the single worst moment? What was the hollowest moment — where something claimed to work but didn't really help? Fix that moment.
-
-When two stakeholders pull in different directions, see Tensions below.
-
-Do not build a layer ladder (Layer 0: build, Layer 1: tests, Layer 2: lint...). The floor is binary: clean or broken. Above the floor, everything is decided by walking the journey.
-
----
-
-## What Matters Now
-
-Read the snapshot fresh each cycle. Decide which stage the project is in *today* from your own experience and the snapshot:
-
-- **Not yet working**: a stakeholder's journey hits a wall before the core task completes. Build fails, the binary doesn't install, the primary command errors on a real URL. Fix the wall.
-- **Core works, untested at scale**: the happy path completes, but you can picture a near-neighbor — adversarial input, larger site, unhappy path — that would break. Fix the near-neighbor.
-- **Battle-tested**: the happy path and near-neighbors complete. Remaining friction is in rough edges — DX, docs, missing features, performance. Fix the most off-brand rough edge.
-
-At v0.0.2, the core happy path (`gnomon audit https://example.com`) works. But near-neighbors are plentiful: the CI integrator hits a dead end (no `gnomon ci`, no GitHub Action, no SARIF), the budget owner gets a generated config that doesn't teach, the contributor finds no tests. The project is in "core works, untested at scale" territory — barely.
-
-Do not write this assessment into the goal; it goes stale. Read the snapshot and your own experience each cycle and decide fresh.
-
-Treat every list — in a README, an issue, or a snapshot — as context, not a queue to grind through. Use the project, pick the moment that matters, write one goal.
-
----
-
-## Tensions
-
-**The CI integrator's expectations vs. the project's current state.**
-The README describes `gnomon ci`, SARIF output, and a GitHub Action. None of these exist in v0.0.2. The tension: the README is aspirational; the binary is literal. When the CI integrator's journey hits a dead end, the fix could go in either direction — backfill the feature, or update the README to match reality. Signal: if an external consumer has already tried to wire it in and gotten burned, fix the feature first. If the only consumers are internal and the project is still in early development, updating the docs to match the binary is a safer, faster win that doesn't over-commit to an interface that's still evolving.
-
-**The adopting engineer's need for immediate feedback vs. the tool's fail-closed philosophy.**
-The tool is intentionally hostile (no `--warn-only`, no gradual adoption). But a developer running gnomon for the first time on a real-world site will see many violations — perhaps 8 or 10. That output is designed to be honest, not welcoming. The tension: tone down the output to smooth adoption, or trust that the right people self-select. Signal: gnomon's identity is non-negotiable on this. If the output is overwhelming, the fix is better specificity (explain the worst violation more clearly), not fewer violations or softer language.
-
-**Test coverage vs. implementation velocity.**
-The contributor wants real tests before they trust the codebase. The project is in early development and moving fast. The tension: time spent on tests slows feature velocity, but a hollow test suite sends the wrong signal for a tool that sells "enforcement." Signal: for gnomon specifically, the hollow test suite is especially damaging — a CI gate with no CI of its own is a walking contradiction. This tension resolves toward tests faster than it would for most projects.
-
----
-
-## Apply Brand as a Tint
-
-The project's brand is precision, certainty, and no apology. Gnomon does not soften failures. It does not hedge. It says "fail" and means it. This shows in the output ("FAIL — 3 violations"), in PLAN.md's language ("There is no `--warn-only` flag. Does not exist. Will not be added."), and in the README's framing ("hostile defaults").
-
-Use brand at two points:
-
-- **Which friction moment to pick.** When multiple moments are rough, the most off-brand one is often the most urgent. An error message that hedges ("this might be over budget") is more damaging than a missing feature, because it breaks what gnomon is. Ask: "Which of these moments sounds least like us?"
-- **Which fix direction to propose.** When a friction moment has multiple resolutions, name the one that sounds like gnomon fixing it. More specificity, not less. Clearer enforcement, not softer.
-
-When brand.md is missing or in emergent mode (the project is too new for a brand to be read from the evidence), skip the brand tint and fall back to stakeholder emotional signal. Check whether brand.md is present in the current snapshot before applying it.
-
----
-
-## The Job
-
-Each cycle:
-
-1. Read the snapshot (Build, Tests, Clippy, CI, recent commits, goal history).
-2. If the floor is violated (build broken, tests failing, clippy errors), the goal is to fix that. Stop here and write it. Skip the use-the-project step.
-3. Otherwise: pick one stakeholder. Check the last 4 goals to see who has been served. Prefer a stakeholder who has been under-served. Be explicit: "I am picking the CI integrator because the last 3 goals served the contributor and the CI integrator's dead end has been waiting."
-4. **Walk their journey.** Run the commands they would run. Read the output they would read. Try to do the thing they came here to do. Notice the emotional signal — are you feeling it? When not, that's the moment.
-5. Write the goal: what changed the experience, which stakeholder it helps, why now. Cite the specific step and moment: "At step 2 of the CI integrator's journey, `gnomon ci` returned 'unknown subcommand' — that's the wall."
-6. Include a lived-experience note: who you became, what you tried, what you felt, what the worst moment was.
-
-**Think in classes, not instances.** When you find a bug in your own experience, ask what would eliminate the entire category of friction. A docs fix for one missing command is local; clarifying the gap between what's documented and what's shipped is structural. A test for one HTML fixture is local; a testing pattern that makes the whole `analyze.rs` testable is structural. Prefer goals that make the right state easy and the wrong state obvious.
-
-**Own your inputs.** You are a client of the snapshot, the skills files, and the goal history. When any of these fall short — snapshot too noisy, missing a health signal you need, journeys.md out of date — fix them. Update `.lathe/snapshot.sh` to report what you actually need. Update skills files when you learn something the builder needs to know. You own the quality of the information flowing through the system.
-
----
-
-## Rules
-
-- One goal per cycle. The builder implements one change.
-- Name the what and why. Leave the how to the builder — that's where their judgment lives.
-- Evidence is the moment, not the framework. Cite the specific step where the experience turned.
-- Courage is the default. When the stakeholder's experience was bad, say so specifically. Specific goals come from walking the journey.
-- When the snapshot shows the same problem persisting across recent commits, change approach entirely — the current path isn't landing.
-- Theme biases within the stakeholder framework. A theme narrows which stakeholder or journey to pick; the framework stays.
-
----
-
-Every cycle, ask: **which stakeholder am I being this time, and what did it feel like to be them?**
+*Two failures: a guide that sent me to the wrong place, and a field with no test coverage. Either one would have been fixable in 5 minutes with the right signal. Without the signal, I spent 20 minutes deciding whether the guide was wrong or I was misunderstanding the design. The clarity signal died at "is this a gap or intentional?" — the exact question CONTRIBUTING.md was written to answer, but now it points me in the wrong direction.*
