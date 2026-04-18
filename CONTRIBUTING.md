@@ -48,3 +48,27 @@ Two fields are **intentionally informational** — they are tracked in the JSON 
 - **`preconnect_targets`** — lists `<link rel="preconnect">` and `<link rel="dns-prefetch">` targets. Preconnecting to a CDN origin is a standard performance technique. Presence is not evidence of theater.
 
 If the discovery algorithm points you to either of these fields, this is the explanation.
+
+### When the scan returns empty
+
+If every `HtmlAnalysis` field is already covered or intentionally informational, the scan returns nothing. That does not mean the project is complete — it means the next check has not been added as a field yet. PLAN.md §4 lists anti-theater detections planned for static-HTML mode. Two that are checkable from the HTML document alone, with no browser or JavaScript execution required:
+
+**1. `<script type="speculationrules">` with prerender**
+
+Sites prerender their own homepage so Lighthouse measures a warm cache instead of a cold first visit. Detectable: `<script type="speculationrules">` is a DOM element whose text content is JSON. If the JSON includes `"prerender"`, the page is gaming cold-cache LCP measurement.
+
+- Field name: `has_speculation_prerender: bool`
+- Detection: in `analyze_html`, find `<script type="speculationrules">` elements, parse the text content, check for `"prerender"`.
+- Violation detail: `"<script type=\"speculationrules\"> with prerender — games cold-cache LCP measurement"`
+- Test template: copy `theater_violations_img_missing_dimensions_fires`.
+
+**2. `<picture>` element with no modern-format `<source>`**
+
+A `<picture>` element that lists only JPEG or PNG `<source>` entries (no `type="image/webp"` or `type="image/avif"`) provides no format-negotiation benefit. It is the same as a plain `<img>` with more markup. Detectable from the HTML alone.
+
+- Field name: `picture_missing_modern_source: u32` (count of `<picture>` elements with no WebP/AVIF source)
+- Detection: in `analyze_html`, find `<picture>` elements, check their `<source type="...">` children.
+- Violation detail: `"N <picture> element(s) with no WebP or AVIF source — format negotiation is decorative"`
+- Test template: copy `img_missing_both_dimensions_is_counted` in `src/analyze.rs` for detection; copy `theater_violations_img_missing_dimensions_fires` in `src/audit.rs` for the violation branch.
+
+**What is NOT feasible in static mode:** PLAN.md §4 items that require JavaScript execution or a browser — hidden-until-interaction payloads, client-side-rendered shells, service workers, hydration timing — cannot be checked from HTML alone. They require the future `--measure` flag (headless Chromium). Do not add `HtmlAnalysis` fields for these; they belong in the measured-vitals path.
