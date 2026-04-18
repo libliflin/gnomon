@@ -137,7 +137,7 @@ pub fn print_json(r: &AuditReport) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn print_sarif(r: &AuditReport) -> anyhow::Result<()> {
+fn build_sarif(r: &AuditReport) -> serde_json::Value {
     use serde_json::{Value, json};
     use std::collections::HashSet;
 
@@ -176,7 +176,7 @@ pub fn print_sarif(r: &AuditReport) -> anyhow::Result<()> {
         })
         .collect();
 
-    let sarif = json!({
+    json!({
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
         "version": "2.1.0",
         "runs": [{
@@ -190,15 +190,18 @@ pub fn print_sarif(r: &AuditReport) -> anyhow::Result<()> {
             },
             "results": results
         }]
-    });
+    })
+}
 
-    let s = serde_json::to_string_pretty(&sarif)?;
+pub fn print_sarif(r: &AuditReport) -> anyhow::Result<()> {
+    let s = serde_json::to_string_pretty(&build_sarif(r))?;
     println!("{s}");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use super::build_sarif;
     use crate::audit::{AuditReport, Totals};
     use crate::analyze::HtmlAnalysis;
     use crate::fetch::Fetched;
@@ -233,65 +236,10 @@ mod tests {
         }
     }
 
-    fn sarif_output(r: &AuditReport) -> serde_json::Value {
-        use std::collections::HashSet;
-        use serde_json::{Value, json};
-
-        let mut seen: HashSet<String> = HashSet::new();
-        let rules: Vec<Value> = r
-            .violations
-            .iter()
-            .filter_map(|v| {
-                let id = format!("{}/{}", v.kind.label(), v.metric);
-                if seen.insert(id.clone()) {
-                    Some(json!({
-                        "id": id,
-                        "shortDescription": { "text": v.metric }
-                    }))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let results: Vec<Value> = r
-            .violations
-            .iter()
-            .map(|v| {
-                json!({
-                    "ruleId": format!("{}/{}", v.kind.label(), v.metric),
-                    "level": "error",
-                    "message": { "text": v.detail.clone() },
-                    "locations": [{
-                        "physicalLocation": {
-                            "artifactLocation": { "uri": r.url.clone() }
-                        }
-                    }]
-                })
-            })
-            .collect();
-
-        json!({
-            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-            "version": "2.1.0",
-            "runs": [{
-                "tool": {
-                    "driver": {
-                        "name": "gnomon",
-                        "version": r.gnomon_version,
-                        "informationUri": "https://github.com/libliflin/gnomon",
-                        "rules": rules
-                    }
-                },
-                "results": results
-            }]
-        })
-    }
-
     #[test]
     fn sarif_schema_fields_present() {
         let r = minimal_report(vec![]);
-        let v = sarif_output(&r);
+        let v = build_sarif(&r);
         assert_eq!(v["version"], "2.1.0");
         assert!(v["$schema"].as_str().unwrap().contains("sarif-schema-2.1.0"));
         assert!(v["runs"].is_array());
@@ -301,7 +249,7 @@ mod tests {
     #[test]
     fn sarif_empty_violations_produces_empty_results() {
         let r = minimal_report(vec![]);
-        let v = sarif_output(&r);
+        let v = build_sarif(&r);
         let results = v["runs"][0]["results"].as_array().unwrap();
         assert!(results.is_empty());
     }
@@ -316,7 +264,7 @@ mod tests {
             detail: "33 KiB over — main.css (28 KiB)".to_string(),
         };
         let r = minimal_report(vec![violation]);
-        let v = sarif_output(&r);
+        let v = build_sarif(&r);
         let result = &v["runs"][0]["results"][0];
         assert_eq!(result["level"], "error");
         assert_eq!(result["message"]["text"], "33 KiB over — main.css (28 KiB)");
@@ -335,7 +283,7 @@ mod tests {
                 .to_string(),
         };
         let r = minimal_report(vec![violation]);
-        let v = sarif_output(&r);
+        let v = build_sarif(&r);
         let rule_id = v["runs"][0]["results"][0]["ruleId"].as_str().unwrap();
         assert_eq!(rule_id, "theater/img_dimensions");
         // Also pinned in the rules array.
@@ -343,5 +291,30 @@ mod tests {
             .as_str()
             .unwrap();
         assert_eq!(rules_id, "theater/img_dimensions");
+    }
+
+    #[test]
+    fn sarif_duplicate_kind_metric_produces_one_rule_entry() {
+        // Two violations with the same kind/metric — one rule entry, two results.
+        let v1 = Violation {
+            kind: ViolationKind::Forbidden,
+            metric: "forbidden_domain",
+            budget: 0,
+            actual: 1,
+            detail: "googlesyndication.com — Google ad syndication".to_string(),
+        };
+        let v2 = Violation {
+            kind: ViolationKind::Forbidden,
+            metric: "forbidden_domain",
+            budget: 0,
+            actual: 1,
+            detail: "doubleclick.net — Google ad syndication".to_string(),
+        };
+        let r = minimal_report(vec![v1, v2]);
+        let v = build_sarif(&r);
+        let rules = v["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1, "two violations with same ruleId must produce one rule entry");
+        let results = v["runs"][0]["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2, "two violations must produce two result entries");
     }
 }
