@@ -715,6 +715,44 @@ mod tests {
         );
     }
 
+    // ---- bytes_check boundary conditions and format ----
+
+    #[test]
+    fn bytes_check_exactly_at_budget_no_violation() {
+        // actual == budget: the check is `actual > budget`, so no violation must fire.
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "css", 14_336, 14_336, &[]);
+        assert!(vios.is_empty(), "exactly at budget must not fire, got: {vios:?}");
+    }
+
+    #[test]
+    fn bytes_check_one_byte_over_fires() {
+        // actual = budget + 1: the boundary that triggers the violation.
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "css", 14_337, 14_336, &[]);
+        assert_eq!(vios.len(), 1, "one byte over must fire exactly one violation");
+        assert_eq!(vios[0].metric, "css");
+    }
+
+    #[test]
+    fn bytes_check_nonzero_budget_detail_format() {
+        // Budget 10 KiB (10240 bytes), actual 512000 bytes (~500 KiB).
+        // Detail must read "X over Y KiB budget" — pins the goal's example format
+        // so the budget owner can paste the violation and have it stand alone.
+        let mut vios: Vec<Violation> = Vec::new();
+        bytes_check(&mut vios, "css", 512_000, 10_240, &[]);
+        assert_eq!(vios.len(), 1);
+        let detail = &vios[0].detail;
+        assert!(
+            detail.contains("10 KiB budget"),
+            "detail must include human-readable budget, got: {detail}"
+        );
+        assert!(
+            detail.contains("over"),
+            "detail must include 'over', got: {detail}"
+        );
+    }
+
     // ---- bytes_check with inline synthetic contributors ----
 
     #[test]
